@@ -2,8 +2,8 @@
 /*
 Plugin Name: Pesapal Pay
 Description: A quick way to integrate pesapal to your website to handle the payment process. All you need to do is set up what parameters to capture from the form and the plugin will do the rest
-Version: 1.1
-Author: TheBunch
+Version: 1.2
+Author: rixeo
 Author URI: http://thebunch.co.ke/
 Plugin URI: http://thebunch.co.ke/
 */
@@ -13,6 +13,7 @@ define('PESAPAL_PAY_PLUGIN_DIR', WP_PLUGIN_DIR.'/'.dirname(plugin_basename(__FIL
 
 
 require_once(PESAPAL_PAY_PLUGIN_DIR.'/OAuth.php');
+require_once(PESAPAL_PAY_PLUGIN_DIR.'/pesapal_pay_donate_widget.php');
 
 /**
  * Set up database
@@ -370,6 +371,70 @@ function pesapal_pay_button($atts){
 	return $output;
 }
  
+/** 
+ *	Generate Invoice ID
+ */
+function pesapal_pay_generate_order_id() {
+	$order_id = date('yzB');
+	$order_id = apply_filters( ' pesapal_pay_order_id', $order_id ); //Very important to make sure order numbers are unique and not sequential if filtering
+	return $order_id;
+}
+
+//PesaPal Donate Shortcode
+add_shortcode('pesapal_donate', 'pesapal_pay_donate');
+
+/**
+ * Generate PesaPal Donate box
+ */
+function pesapal_pay_donate($text){
+	$content = '<form id="pesapal_donate_widget">';
+	$content .= '<table class="pesapal_pay_widget_table">';
+	if(!empty($text)){
+		$content .= '<tr>';
+		$content .= '<td>';
+		$content .= $text;
+		$content .= '</td>';
+		$content .= '</tr>';
+	}
+	$content .= '<tr>';
+	$content .= '<td>';
+	$content .= __("Email :");
+	$content .= '<br/>';
+	$content .= '<input type="text" name="pesapal_donate_email" id="pesapal_donate_email" value=""/>';
+	$content .= '</td>';
+	$content .= '</tr>';
+	$content .= '<tr>';
+	$content .= '<td>';
+	$content .= __("Amount :");
+	$content .= '<br/>';
+	$content .= '<input type="text" name="pesapal_donate_amount" id="pesapal_donate_amount" value=""/>';
+	$content .= '</td>';
+	$content .= '</tr>';
+	$content .= '</table>';
+	$content .= '<input type="hidden" name="pesapal_donate_invoice" id="pesapal_donate_invoice" value="'.pesapal_pay_generate_order_id().'"/>';
+	$content .= '<input type="hidden" name="ajax" value="true" />';
+	$content .= '<input type="hidden" name="action" value="pesapal_save_transaction"/>';
+	$content .= '</form>';
+	$content .= '<button name="pespal_pay_donate" id="pespal_pay_donate">'.__("Donate Using PesaPal").'</button>';
+	$content .= '<script type="text/javascript">';
+	$content .= 'jQuery(document).ready(function(){';
+	$content .= 'jQuery("#pespal_pay_donate").click(function(){';
+	$content .= 'jQuery("#pespal_pay_donate").val("Processing......");';
+	$content .= 'jQuery.ajax({';
+	$content .= 'type: "POST",';
+	$content .= 'data: jQuery("#pesapal_donate_widget").serialize(),';
+	$content .= 'url: "'.admin_url('admin-ajax.php').'",';
+	$content .= 'success:function(data){';
+	$content .= 'jQuery("#pesapal_donate_widget").parent().html(data)';
+	$content .= '}';
+	$content .= '})';
+	$content .= '});';
+	$content .= '});';
+	$content .= '</script>';
+	return $content;
+}
+	
+	
 /**
  * Save Transaction
  */
@@ -392,10 +457,27 @@ function pesapal_save_transaction(){
 	if(function_exists ($form_function)){
 		call_user_func($form_function);
 	}
+	
 	//Form info
-	$form_invoice = $_REQUEST[$options['form_invoice']];
-	$form_email = $_REQUEST[$options['form_email']];
-	$form_cost = $_REQUEST[$options['form_cost']];
+
+	if(@$_REQUEST['pesapal_donate_invoice']){
+		$form_invoice = $_REQUEST['pesapal_donate_invoice'];
+	}else{
+		$form_invoice = $_REQUEST[$options['form_invoice']];
+	}
+	
+	if(@$_REQUEST['pesapal_donate_email']){
+		$form_email = $_REQUEST['pesapal_donate_email'];
+	}else{
+		$form_email = $_REQUEST[$options['form_email']];
+	}
+	
+	if(@$_REQUEST['pesapal_donate_amount']){
+		$form_cost = $_REQUEST['pesapal_donate_amount'];
+	}else{
+		$form_cost = $_REQUEST[$options['form_cost']];
+	}
+	
 	
 	$form_cost = floatval($form_cost);
 	
