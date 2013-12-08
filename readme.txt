@@ -1,10 +1,10 @@
 === PesaPal Pay ===
-Contributors: rixed
+Contributors: rixeo
 Tags: Pesapal, e-commerce, ecommerce
 
 Requires at least: 3.0
 Tested up to: 3.7.1
-Stable tag: 1.2
+Stable tag: 1.2.1
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -45,6 +45,9 @@ Just put the shortcode on a page after the products page. The shortcode will loo
 
 
 == Changelog ==
+
+= 1.2.1 =
+Author information
 
 = 1.2 =
 Added Pesapal Donate Widget and shortcode [pesapal_donate]. You can now accept donations via PesaPal.
