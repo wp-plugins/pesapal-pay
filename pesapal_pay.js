@@ -8,7 +8,7 @@ function pesapal_pay_no_invoice(parentdivId,email, amount){
 	jQuery.ajax({
 		type: "POST",
 		url: p_pay_js.ajaxurl,
-		data: 'action=pesapal_save_transaction&pesapal_donate_email=' + pesapal_donate_amount+'&current='+amount+'&pesapal_donate_no_invoice=true',
+		data: 'action=pesapal_save_transaction&pesapal_donate_email=' + email+'&current='+amount+'&pesapal_donate_no_invoice=true',
 		success:function(data){
 			jQuery('#'+parentdivId).html(data);
 		}
