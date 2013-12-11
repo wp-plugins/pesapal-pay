@@ -2,7 +2,7 @@
 /*
 Plugin Name: Pesapal Pay
 Description: A quick way to integrate pesapal to your website to handle the payment process. All you need to do is set up what parameters to capture from the form and the plugin will do the rest
-Version: 1.2.1
+Version: 1.2.2
 Author: rixeo
 Author URI: http://thebunch.co.ke/
 Plugin URI: http://thebunch.co.ke/
@@ -459,11 +459,15 @@ function pesapal_save_transaction(){
 	}
 	
 	//Form info
-
-	if(@$_REQUEST['pesapal_donate_invoice']){
-		$form_invoice = $_REQUEST['pesapal_donate_invoice'];
+	
+	if(@$_REQUEST['pesapal_donate_no_invoice']){
+		$form_invoice =pesapal_pay_generate_order_id();
 	}else{
-		$form_invoice = $_REQUEST[$options['form_invoice']];
+		if(@$_REQUEST['pesapal_donate_invoice']){
+			$form_invoice = $_REQUEST['pesapal_donate_invoice'];
+		}else{
+			$form_invoice = $_REQUEST[$options['form_invoice']];
+		}
 	}
 	
 	if(@$_REQUEST['pesapal_donate_email']){
