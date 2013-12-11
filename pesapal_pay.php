@@ -39,6 +39,15 @@ function pesapal_pay_setup_database(){
 }
 
 /**
+ * Load Resources
+ */
+add_action( 'init', 'pesapal_pay_resources');
+function pesapal_pay_resources(){
+	wp_enqueue_script('pesapal_pay_js', PESAPAL_PAY_PLUGIN_URL.'/pesapal_pay.js', array('jquery'), '', false);
+	wp_enqueue_script("pesapal_pay_js");
+	wp_localize_script('pesapal_pay_js', 'p_pay_js', array( 'p_pay_url' => get_bloginfo('url') , 'ajaxurl' => admin_url('admin-ajax.php')) );
+}
+/**
  * Create Admin menu
  */
 add_action('admin_menu', 'pesapal_pay_create_admin_menu');
