@@ -4,7 +4,7 @@ Tags: Pesapal, e-commerce, ecommerce
 
 Requires at least: 3.0
 Tested up to: 3.7.1
-Stable tag: 1.2.4
+Stable tag: 1.2.5
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -12,7 +12,8 @@ PesaPal Pay allows you to easily integrate Pesapal to any ecommerce website
 
 == Description ==
 
-A quick way to integrate PesaPal to your website to handle the payment process. All you need to do is set up what parameters to capture from the form and the plugin will do the rest via the shortcode [pesapal_pay_button] where you can add the attribute button_name to be the text on the button. You can now alos accept donations via the PesaPal Donate Widget or using the shortcode [pesapal_donate]
+A quick way to integrate PesaPal to your website to handle the payment process. All you need to do is set up what parameters to capture from the form and the plugin will do the rest via the shortcode [pesapal_pay_button] where you can add the attribute button_name to be the text on the button. You can now alos accept donations via the PesaPal Donate Widget or using the shortcode [pesapal_donate].
+Call the javascript function pesapal_pay_no_invoice(parentdivId,email, amount) with parentdivId being the ID you want pesapal to be loaded
 
 Main Features:
 
@@ -21,6 +22,7 @@ Main Features:
 * Log PesaPal transactions
 * Allows calling of a function before the pesapal transaction
 * Accept Donations
+* Javascript Usage
 
 
 We are still working to make this excellent
@@ -43,8 +45,14 @@ Just post the parameters to a payment page that has the pesapal shortcode on it
 = How do I use the shortcode? =
 Just put the shortcode on a page after the products page. The shortcode will look for the parameters you set up in the previous page and set them to be used in the transaction to PesaPal
 
+= How Do I use the Javascript Function =
+Just call pesapal_pay_no_invoice(parentdivId,email, amount) function after the form has been posted and get the returned parameters for email and total amount in kenyan shillings
+
 
 == Changelog ==
+
+= 1.2.5 =
+Javascript bug fix
 
 = 1.2.4 =
 Javascript bug fix

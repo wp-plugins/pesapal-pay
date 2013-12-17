@@ -2,7 +2,7 @@
 /*
 Plugin Name: Pesapal Pay
 Description: A quick way to integrate pesapal to your website to handle the payment process. All you need to do is set up what parameters to capture from the form and the plugin will do the rest
-Version: 1.2.4
+Version: 1.2.5
 Author: rixeo
 Author URI: http://thebunch.co.ke/
 Plugin URI: http://thebunch.co.ke/
@@ -234,13 +234,14 @@ function pesapal_pay_payment_log(){
 						?>
 						<tr id="pesapal_order_<?php echo $result->id; ?>">
 							<td><?php printf(__("%d"),$count);?></td>
-							<td><?php printf(__("%s"),$result->email);?></td>
 							<td>
 								<?php echo $result->invoice;?>
 								<p>
 									<a href="javascript:void(null);" onclick="pesapal_pay_delete('<?php echo $result->id; ?>');"><?php _e("Delete");?></a>
 								</p>
 							</td>
+							<td><?php printf(__("%s"),$result->email);?></td>
+							
 							<td><?php printf(__("%s"),$result->date);?></td>
 							<td><?php printf(__("%s"),$result->total);?></td>
 							<td><span id="pesapal_order_status_<?php echo $result->id; ?>"><?php printf(__("%s"),$result->payment_status);?></span> <a href="javascript:void(null);" onclick="pesapal_pay_status('<?php echo $result->id; ?>','<?php echo $result->payment_status; ?>');"><?php _e("Change status"); ?></a></td>
