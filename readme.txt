@@ -4,7 +4,7 @@ Tags: Pesapal, e-commerce, ecommerce
 
 Requires at least: 3.0
 Tested up to: 3.7.1
-Stable tag: 1.2.5
+Stable tag: 1.2.6
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -50,6 +50,9 @@ Just call pesapal_pay_no_invoice(parentdivId,email, amount) function after the f
 
 
 == Changelog ==
+
+= 1.2.6 =
+Ivoice ID fix
 
 = 1.2.5 =
 Javascript bug fix
