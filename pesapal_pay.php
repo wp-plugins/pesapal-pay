@@ -2,7 +2,7 @@
 /*
 Plugin Name: Pesapal Pay
 Description: A quick way to integrate pesapal to your website to handle the payment process. All you need to do is set up what parameters to capture from the form and the plugin will do the rest
-Version: 1.2.6
+Version: 1.2.7
 Author: rixeo
 Author URI: http://thebunch.co.ke/
 Plugin URI: http://thebunch.co.ke/
@@ -104,11 +104,6 @@ function pesapal_pay_setup(){
 				<tr>
 				    <th scope="row"><?php _e('PesaPal Merchant Credentials'); ?></th>
 				    <td>
-						<p>
-							<label><?php _e('Use PesaPal Sandbox'); ?><br />
-							  <input value="checked" name="sandbox" type="checkbox" <?php echo ($options['sandbox'] == 'checked') ? "checked='checked'": ""; ?> />
-							</label>
-						</p>
 						<p>
 							<label><?php _e('Customer Key') ?><br />
 							  <input value="<?php echo $options['customer_key']; ?>" size="30" name="customer_key" type="text" />
@@ -456,13 +451,9 @@ function pesapal_save_transaction(){
 	$options = get_option('pesapal_pay_setup');
 	
 	$post_url = 'https://www.pesapal.com/api/PostPesapalDirectOrderV4';
-	
-	$test_post_url = 'http://demo.pesapal.com/api/PostPesapalDirectOrderV4';
-	
+		
 	$status_request = 'https://www.pesapal.com/api/querypaymentstatus';
-	
-	$test_status_request = 'https://demo.pesapal.com/api/querypaymentstatus';
-	
+		
 	$form_function = $options['form_function'];
 	if(function_exists ($form_function)){
 		call_user_func($form_function);
@@ -535,9 +526,6 @@ function pesapal_save_transaction(){
 	$consumer = new OAuthConsumer($consumer_key, $consumer_secret);
 	//post transaction to pesapal
 	$pp_post_url = $post_url;
-	if($options['sandbox'] == 'checked'){
-		$pp_post_url = $test_post_url;
-	}
 	$iframe_src = OAuthRequest::from_consumer_and_token($consumer, $token, "GET", $pp_post_url, $params);
 	$iframe_src->set_parameter("oauth_callback", $callback_url);
 	$iframe_src->set_parameter("pesapal_request_data", $post_xml);
@@ -564,13 +552,9 @@ function pesapal_ipn_return(){
 	$options = get_option('pesapal_pay_setup');
 	
 	$post_url = 'https://www.pesapal.com/api/PostPesapalDirectOrderV4';
-	
-	$test_post_url = 'http://demo.pesapal.com/api/PostPesapalDirectOrderV4';
-	
+		
 	$status_request = 'https://www.pesapal.com/api/querypaymentstatus';
-	
-	$test_status_request = 'https://demo.pesapal.com/api/querypaymentstatus';
-	
+		
 	$consumer_key = $options['customer_key'];
 	$consumer_secret = $options['customer_secret'];
 	
@@ -578,10 +562,7 @@ function pesapal_ipn_return(){
 	$payment_notification = $_REQUEST['pesapal_notification_type'];
 	$invoice = $_REQUEST['pesapal_merchant_reference'];
 	$statusrequestAPI = $status_request;
-	if($options['sandbox'] == 'checked'){
-		$statusrequestAPI = $test_status_request;
-	}
-	
+
 	if($pesapalNotification=="CHANGE" && $pesapalTrackingId!=''){
 		$token = $params = NULL;
 		$consumer = new OAuthConsumer($consumer_key, $consumer_secret);
