@@ -36,6 +36,14 @@ function pesapal_pay_setup_database(){
 		require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
 		dbDelta($sql);
 	}
+	if($wpdb->get_var("show tables like '$table_name'") == $table_name) {
+		$pesapal_pay_database_update = get_option('pesapal_pay_database_update');
+		if(empty($pesapal_pay_database_update)){
+			$alter_sql = "ALTER TABLE `$table_name` ADD COLUMN `firstname` VARCHAR(100) NULL AFTER `email`, ADD COLUMN `lastname` VARCHAR(100) NULL AFTER `firstname`";
+			$wpdb->query($alter_sql);
+			update_option('pesapal_pay_database_update', 1);
+		}
+	}
 }
 
 /**
@@ -340,6 +348,56 @@ function pesapal_delete_order() {
 	die();
 }
 
+/**
+ * Payment form
+ *
+ */
+add_shortcode('pesapal_pay_payment_form', 'pesapal_pay_payment_form');
+function pesapal_pay_payment_form($atts){
+	extract(shortcode_atts(array(
+				'button_name' => 'Buy Using Pesapal'), $atts));
+	$options = get_option('pesapal_pay_setup');
+	
+	$output = '<form id="pesapal_checkout">
+				<input type="hidden" name="ppform" id="ppform" />
+				<fieldset>
+					<legend> User Details</legend>
+					<div class="control-group">
+						<label>First Name</label>		
+						<div><input type="text" size="40" class="required" value="" id="ppfname" name="ppfname"></div>
+					</div>
+					<div class="control-group">
+						<label>Last Name</label>		
+						<div><input type="text" size="40" class="required" value="" id="pplname" name="pplname"></div>
+					</div>
+					<div class="control-group">
+						<label>Email</label>		
+						<div><input type="text" class="required" value="" id="ppemail" name="ppemail"></div>
+					</div>	
+					<div class="control-group">
+						<label>Amount</label>		
+						<div><input type="text" size="40" class="required" value="" id="ppamount" name="ppamount"></div>
+					</div>					
+				</fieldset>	 	 
+			</form>
+		<button name="pespal_pay" id="pespal_pay_btn">'.$button_name.'</button>';
+	$output .= '<script type="text/javascript">';
+	$output .= 'jQuery(document).ready(function(){';
+	$output .= 'jQuery("#pespal_pay_btn").click(function(){';
+	$output .= 'jQuery("#pespal_pay_btn").val("Processing......");';
+	$output .= 'jQuery.ajax({';
+	$output .= 'type: "POST",';
+	$output .= 'data: jQuery("#pesapal_checkout").serialize(),';
+	$output .= 'url: "'.admin_url('admin-ajax.php').'",';
+	$output .= 'success:function(data){';
+	$output .= 'jQuery("#pesapal_checkout").parent().html(data)';
+	$output .= '}';
+	$output .= '})';
+	$output .= '});';
+	$output .= '});';
+	$output .= '</script>';
+	return $output;
+}
 
 /**
  * Shortcode
@@ -439,7 +497,26 @@ function pesapal_pay_donate($text){
 	return $content;
 }
 	
+/**
+ * Verify a transaction is paid for. This is to secure the page content
+ *
+ */
+add_shortcode('pesapal_verify_transaction', 'pesapal_verify_transaction');
+function pesapal_verify_transaction($atts, $content = null){
+	global $wpdb;
+	$table_name = $wpdb->prefix."pesapal_pay";
+	$transactionid = $_REQUEST['id']; //Get the id of the invoice
 	
+	$sql = "SELECT `id` FROM {$table_name} WHERE `invoice` = '{$transactionid}' AND `payment_status` = 'Paid'";
+	$invoice = $wpdb->get_var($sql);
+	if($invoice){
+		return $content;
+	}else{
+		return "Transaction not yet verified";
+	}
+}
+
+
 /**
  * Save Transaction
  */
@@ -458,38 +535,49 @@ function pesapal_save_transaction(){
 	if(function_exists ($form_function)){
 		call_user_func($form_function);
 	}
-	
-	//Form info
-	
-	if(@$_REQUEST['pesapal_donate_no_invoice']){
+	if(@$_REQUEST['ppform']){
 		$form_invoice =pesapal_pay_generate_order_id();
+		$firstname = $_REQUEST['ppfname'];
+		$lastname = $_REQUEST['pplname'];
+		$form_email = $_REQUEST['ppemail'];
+		$form_cost = $_REQUEST['ppamount'];
 	}else{
-		if(@$_REQUEST['pesapal_donate_invoice']){
-			$form_invoice = $_REQUEST['pesapal_donate_invoice'];
+		//Form info
+		
+		if(@$_REQUEST['pesapal_donate_no_invoice']){
+			$form_invoice =pesapal_pay_generate_order_id();
 		}else{
-			$form_invoice = $_REQUEST[$options['form_invoice']];
+			if(@$_REQUEST['pesapal_donate_invoice']){
+				$form_invoice = $_REQUEST['pesapal_donate_invoice'];
+			}else{
+				$form_invoice = $_REQUEST[$options['form_invoice']];
+			}
+		}
+		if(empty($form_invoice)){
+			$form_invoice =pesapal_pay_generate_order_id();
+		}
+		
+		if(@$_REQUEST['pesapal_donate_email']){
+			$form_email = $_REQUEST['pesapal_donate_email'];
+		}else{
+			$form_email = $_REQUEST[$options['form_email']];
+		}
+		$firstname = $form_email;
+		$lastname = $form_email;
+		
+		if(@$_REQUEST['pesapal_donate_amount']){
+			$form_cost = $_REQUEST['pesapal_donate_amount'];
+		}else{
+			$form_cost = $_REQUEST[$options['form_cost']];
 		}
 	}
-	if(empty($form_invoice)){
-		$form_invoice =pesapal_pay_generate_order_id();
-	}
 	
-	if(@$_REQUEST['pesapal_donate_email']){
-		$form_email = $_REQUEST['pesapal_donate_email'];
-	}else{
-		$form_email = $_REQUEST[$options['form_email']];
-	}
 	
-	if(@$_REQUEST['pesapal_donate_amount']){
-		$form_cost = $_REQUEST['pesapal_donate_amount'];
-	}else{
-		$form_cost = $_REQUEST[$options['form_cost']];
-	}
 	
 	
 	$form_cost = floatval($form_cost);
 	
-	$sql = "INSERT INTO {$table_name}(`date`,`email`,`total`,`invoice`,`payment_status`) VALUES(now(), '{$form_email}', {$form_cost}, '{$form_invoice}','Pending')";
+	$sql = "INSERT INTO {$table_name}(`date`,`email`,`firstname`,`lastname`,`total`,`invoice`,`payment_status`) VALUES(now(), '{$form_email}', {$form_cost}, '{$form_invoice}','Pending')";
 	
 	$wpdb->query($sql);
 	
