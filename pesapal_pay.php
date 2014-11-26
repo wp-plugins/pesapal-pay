@@ -355,11 +355,15 @@ function pesapal_delete_order() {
 add_shortcode('pesapal_pay_payment_form', 'pesapal_pay_payment_form');
 function pesapal_pay_payment_form($atts){
 	extract(shortcode_atts(array(
-				'button_name' => 'Buy Using Pesapal'), $atts));
+				'button_name' => 'Buy Using Pesapal',
+				'amount' => '10'), $atts));
 	$options = get_option('pesapal_pay_setup');
 	
 	$output = '<form id="pesapal_checkout">
-				<input type="hidden" name="ppform" id="ppform" />
+				<input type="hidden" name="ppform" id="ppform" value="ppform"/>
+				<input type="hidden" name="ajax" value="true" />
+				<input type="hidden" name="action" value="pesapal_save_transaction"/>
+				<input type="hidden" name="ppamount" value="'.$amount.'"/>
 				<fieldset>
 					<legend> User Details</legend>
 					<div class="control-group">
@@ -373,10 +377,6 @@ function pesapal_pay_payment_form($atts){
 					<div class="control-group">
 						<label>Email</label>		
 						<div><input type="text" class="required" value="" id="ppemail" name="ppemail"></div>
-					</div>	
-					<div class="control-group">
-						<label>Amount</label>		
-						<div><input type="text" size="40" class="required" value="" id="ppamount" name="ppamount"></div>
 					</div>					
 				</fieldset>	 	 
 			</form>
@@ -535,6 +535,8 @@ function pesapal_save_transaction(){
 	if(function_exists ($form_function)){
 		call_user_func($form_function);
 	}
+	$firstname = '';
+	$lastname = '';
 	if(@$_REQUEST['ppform']){
 		$form_invoice =pesapal_pay_generate_order_id();
 		$firstname = $_REQUEST['ppfname'];
@@ -598,9 +600,9 @@ function pesapal_save_transaction(){
 	$desc = 'Your Order No.: '.$form_invoice;
 	$type = 'MERCHANT';
 	$reference = $form_invoice;
-	$first_name = '';
-	$fullnames = 
-	$last_name = '';
+	$first_name = $firstname;
+	$fullnames = $firstname.' '.$lastname;
+	$last_name = $lastname;
 	$email = $form_email;
 	$username = $email; //same as email
 	$phonenumber = '';//leave blank
