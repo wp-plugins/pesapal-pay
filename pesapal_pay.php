@@ -2,7 +2,7 @@
 /*
 Plugin Name: Pesapal Pay
 Description: A quick way to integrate pesapal to your website to handle the payment process. All you need to do is set up what parameters to capture from the form and the plugin will do the rest
-Version: 1.2.7
+Version: 1.3
 Author: rixeo
 Author URI: http://thebunch.co.ke/
 Plugin URI: http://thebunch.co.ke/
@@ -128,17 +128,17 @@ function pesapal_pay_setup(){
 					<th scope="row"><?php _e('PesaPal Form Settings. These are the names of the fields to be used by the gateway'); ?></th>
 					<td>
 						<p>
-							<label><?php _e('Invoice Form name'); ?><br />
+							<label><?php _e('Invoice Form name. This is the name of the input field that hold the invoice in your form'); ?><br />
 							  <input value="<?php echo $options['form_invoice']; ?>" size="30" name="form_invoice" type="text" />
 							</label>
 						</p>
 						<p>
-							<label><?php _e('Email Form name'); ?><br />
+							<label><?php _e('Email Form name. This is the name of the input field that hold the users name in your form'); ?><br />
 							  <input value="<?php echo $options['form_email']; ?>" size="30" name="form_email" type="text" />
 							</label>
 						</p>
 						<p>
-							<label><?php _e('Total Cost Form name') ?><br />
+							<label><?php _e('Total Cost Form name. This is the name of the input field that hold the total amount in your form') ?><br />
 							  <input value="<?php echo $options['form_cost']; ?>" size="30" name="form_cost" type="text" />
 							</label>
 						</p>
@@ -404,17 +404,32 @@ function pesapal_pay_payment_form($atts){
  */
 add_shortcode('pesapal_pay_button', 'pesapal_pay_button');
 function pesapal_pay_button($atts){
+	$invoice = pesapal_pay_generate_order_id();
+	$user_email = get_bloginfo( 'admin_email' );
 	extract(shortcode_atts(array(
-				'button_name' => 'Pay Using Pesapal'), $atts));
-	$options = get_option('pesapal_pay_setup');
-	$output = '<form id="pesapal_checkout">
-				<input type="hidden" name="'.$options['form_invoice'].'" value="'.@$_REQUEST[$options['form_invoice']].'"/>
-				<input type="hidden" name="'.$options['form_email'].'" value="'.@$_REQUEST[$options['form_email']].'"/>
-				<input type="hidden" name="'.$options['form_cost'].'" value="'.@$_REQUEST[$options['form_cost']].'"/>
-				<input type="hidden" name="ajax" value="true" />
-				<input type="hidden" name="action" value="pesapal_save_transaction"/>
-				</form>
-				<button name="pespal_pay" id="pespal_pay_btn">'.$button_name.'</button>';
+				'button_name' => 'Pay Using Pesapal',
+				'amount' => '10',
+				'use_options' => 'false'), $atts));
+	if($use_options === 'false'){
+		$options = get_option('pesapal_pay_setup');
+		$output = '<form id="pesapal_checkout">
+					<input type="hidden" name="'.$options['form_invoice'].'" value="'.@$_REQUEST[$options['form_invoice']].'"/>
+					<input type="hidden" name="'.$options['form_email'].'" value="'.@$_REQUEST[$options['form_email']].'"/>
+					<input type="hidden" name="'.$options['form_cost'].'" value="'.@$_REQUEST[$options['form_cost']].'"/>
+					<input type="hidden" name="ajax" value="true" />
+					<input type="hidden" name="action" value="pesapal_save_transaction"/>
+					</form>
+					<button name="pespal_pay" id="pespal_pay_btn">'.$button_name.'</button>';
+	}else{
+		$output = '<form id="pesapal_checkout">
+					<input type="hidden" name="'.$options['form_invoice'].'" value="'.$invoice.'"/>
+					<input type="hidden" name="'.$options['form_email'].'" value="'.$user_email.'"/>
+					<input type="hidden" name="'.$options['form_cost'].'" value="'.$amount.'"/>
+					<input type="hidden" name="ajax" value="true" />
+					<input type="hidden" name="action" value="pesapal_save_transaction"/>
+					</form>
+					<button name="pespal_pay" id="pespal_pay_btn">'.$button_name.'</button>';
+	}
 	$output .= '<script type="text/javascript">';
 	$output .= 'jQuery(document).ready(function(){';
 	$output .= 'jQuery("#pespal_pay_btn").click(function(){';
