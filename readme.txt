@@ -3,8 +3,8 @@ Contributors: rixeo
 Tags: Pesapal, e-commerce, ecommerce
 
 Requires at least: 3.0
-Tested up to: 3.7.1
-Stable tag: 1.2.6
+Tested up to: 4.1.1
+Stable tag: 1.3.2
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -51,8 +51,22 @@ Just call pesapal_pay_no_invoice(parentdivId,email, amount) function after the f
 
 == Changelog ==
 
+= 1.3.2 =
+You can now use the shortcode [pesapal_pay_button] multiple times on the same page
+
+= 1.3.1 =
+Small Fix
+
+= 1.3 =
+
+ * Fixed a bug on saving trasnactions. 
+ * Added an option to pass amount on the payment button
+
+= 1.2.7 =
+Pesapal no longer support Sandbox testing. Removed the option in code
+
 = 1.2.6 =
-Ivoice ID fix
+Invoice ID fix
 
 = 1.2.5 =
 Javascript bug fix
