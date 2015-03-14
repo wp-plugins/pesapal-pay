@@ -2,7 +2,7 @@
 /*
 Plugin Name: Pesapal Pay
 Description: A quick way to integrate pesapal to your website to handle the payment process. All you need to do is set up what parameters to capture from the form and the plugin will do the rest
-Version: 1.3.1
+Version: 1.3.2
 Author: rixeo
 Author URI: http://thebunch.co.ke/
 Plugin URI: http://thebunch.co.ke/
@@ -411,36 +411,37 @@ function pesapal_pay_button($atts){
 				'amount' => '10',
 				'use_options' => 'false'), $atts));
 	$options = get_option('pesapal_pay_setup');
+	$formid= mt_rand();
 	if($use_options === 'false'){
 		
-		$output = '<form id="pesapal_checkout">
+		$output = '<form id="pesapal_checkout_'.$formid.'">
 					<input type="hidden" name="'.$options['form_invoice'].'" value="'.@$_REQUEST[$options['form_invoice']].'"/>
 					<input type="hidden" name="'.$options['form_email'].'" value="'.@$_REQUEST[$options['form_email']].'"/>
 					<input type="hidden" name="'.$options['form_cost'].'" value="'.@$_REQUEST[$options['form_cost']].'"/>
 					<input type="hidden" name="ajax" value="true" />
 					<input type="hidden" name="action" value="pesapal_save_transaction"/>
 					</form>
-					<button name="pespal_pay" id="pespal_pay_btn">'.$button_name.'</button>';
+					<button name="pespal_pay_'.$formid.'" id="pespal_pay_btn_'.$formid.'">'.$button_name.'</button>';
 	}else{
-		$output = '<form id="pesapal_checkout">
+		$output = '<form id="pesapal_checkout_'.$formid.'">
 					<input type="hidden" name="'.$options['form_invoice'].'" value="'.$invoice.'"/>
 					<input type="hidden" name="'.$options['form_email'].'" value="'.$user_email.'"/>
 					<input type="hidden" name="'.$options['form_cost'].'" value="'.$amount.'"/>
 					<input type="hidden" name="ajax" value="true" />
 					<input type="hidden" name="action" value="pesapal_save_transaction"/>
 					</form>
-					<button name="pespal_pay" id="pespal_pay_btn">'.$button_name.'</button>';
+					<button name="pespal_pay_'.$formid.'" id="pespal_pay_btn_'.$formid.'">'.$button_name.'</button>';
 	}
 	$output .= '<script type="text/javascript">';
 	$output .= 'jQuery(document).ready(function(){';
-	$output .= 'jQuery("#pespal_pay_btn").click(function(){';
-	$output .= 'jQuery("#pespal_pay_btn").val("Processing......");';
+	$output .= 'jQuery("#pespal_pay_btn_'.$formid.'").click(function(){';
+	$output .= 'jQuery("#pespal_pay_btn_'.$formid.'").val("Processing......");';
 	$output .= 'jQuery.ajax({';
 	$output .= 'type: "POST",';
-	$output .= 'data: jQuery("#pesapal_checkout").serialize(),';
+	$output .= 'data: jQuery("#pesapal_checkout_'.$formid.'").serialize(),';
 	$output .= 'url: "'.admin_url('admin-ajax.php').'",';
 	$output .= 'success:function(data){';
-	$output .= 'jQuery("#pesapal_checkout").parent().html(data)';
+	$output .= 'jQuery("#pesapal_checkout_'.$formid.'").parent().parent().html(data)';
 	$output .= '}';
 	$output .= '})';
 	$output .= '});';
@@ -458,6 +459,7 @@ function pesapal_pay_generate_order_id() {
 	$order_id = apply_filters( ' pesapal_pay_order_id', $order_id ); //Very important to make sure order numbers are unique and not sequential if filtering
 	return $order_id;
 }
+
 
 //PesaPal Donate Shortcode
 add_shortcode('pesapal_donate', 'pesapal_pay_donate');
