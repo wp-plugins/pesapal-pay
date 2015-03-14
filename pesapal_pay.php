@@ -2,7 +2,7 @@
 /*
 Plugin Name: Pesapal Pay
 Description: A quick way to integrate pesapal to your website to handle the payment process. All you need to do is set up what parameters to capture from the form and the plugin will do the rest
-Version: 1.3
+Version: 1.3.1
 Author: rixeo
 Author URI: http://thebunch.co.ke/
 Plugin URI: http://thebunch.co.ke/
@@ -410,8 +410,9 @@ function pesapal_pay_button($atts){
 				'button_name' => 'Pay Using Pesapal',
 				'amount' => '10',
 				'use_options' => 'false'), $atts));
+	$options = get_option('pesapal_pay_setup');
 	if($use_options === 'false'){
-		$options = get_option('pesapal_pay_setup');
+		
 		$output = '<form id="pesapal_checkout">
 					<input type="hidden" name="'.$options['form_invoice'].'" value="'.@$_REQUEST[$options['form_invoice']].'"/>
 					<input type="hidden" name="'.$options['form_email'].'" value="'.@$_REQUEST[$options['form_email']].'"/>
