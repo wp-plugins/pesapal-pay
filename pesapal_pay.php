@@ -2,7 +2,7 @@
 /*
 Plugin Name: Pesapal Pay
 Description: A quick way to integrate pesapal to your website to handle the payment process. All you need to do is set up what parameters to capture from the form and the plugin will do the rest
-Version: 1.3.2
+Version: 1.3.3
 Author: rixeo
 Author URI: http://thebunch.co.ke/
 Plugin URI: http://thebunch.co.ke/
@@ -93,6 +93,20 @@ function pesapal_pay_setup(){
 		update_option('pesapal_pay_setup', $required_fields);
 	}
 	$options = get_option('pesapal_pay_setup');
+	$form_invoice = $options['form_invoice'];
+	$form_email = $options['form_email'];
+	$form_cost = $options['form_cost'];
+	
+	if(empty($form_invoice) && empty($form_email) && empty($form_cost)){
+		$form_invoice = "pesapal_pay_invoice";
+		$form_email = "pesapal_pay_email";
+		$form_cost = "pesapal_pay_cost";
+		
+		$options['form_invoice'] = $form_invoice;
+		$options['form_email'] = $form_email;
+		$options['form_cost'] = $form_cost;
+		update_option('pesapal_pay_setup', $required_fields);
+	}
 	?>
 	<div class="wrap">
 		<h2><?php _e("Pesapal Pay Settings"); ?></h2>
@@ -129,17 +143,17 @@ function pesapal_pay_setup(){
 					<td>
 						<p>
 							<label><?php _e('Invoice Form name. This is the name of the input field that hold the invoice in your form'); ?><br />
-							  <input value="<?php echo $options['form_invoice']; ?>" size="30" name="form_invoice" type="text" />
+							  <input value="<?php echo $form_invoice; ?>" size="30" name="form_invoice" type="text" />
 							</label>
 						</p>
 						<p>
 							<label><?php _e('Email Form name. This is the name of the input field that hold the users name in your form'); ?><br />
-							  <input value="<?php echo $options['form_email']; ?>" size="30" name="form_email" type="text" />
+							  <input value="<?php echo $form_email; ?>" size="30" name="form_email" type="text" />
 							</label>
 						</p>
 						<p>
 							<label><?php _e('Total Cost Form name. This is the name of the input field that hold the total amount in your form') ?><br />
-							  <input value="<?php echo $options['form_cost']; ?>" size="30" name="form_cost" type="text" />
+							  <input value="<?php echo $form_cost; ?>" size="30" name="form_cost" type="text" />
 							</label>
 						</p>
 						<p>
