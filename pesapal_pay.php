@@ -43,6 +43,14 @@ function pesapal_pay_setup_database(){
 			$wpdb->query($alter_sql);
 			update_option('pesapal_pay_database_update', 1);
 		}
+		
+		//ADD column for extra order info
+		$pesapal_pay_database_update_options = get_option('pesapal_pay_database_update_options');
+		if(empty($pesapal_pay_database_update_options)){
+			$alter_sql = "ALTER TABLE `$table_name` ADD COLUMN `order_info` LONGTEXT NULL";
+			$wpdb->query($alter_sql);
+			update_option('pesapal_pay_database_update_options', 1);
+		}
 	}
 }
 
@@ -62,6 +70,7 @@ add_action('admin_menu', 'pesapal_pay_create_admin_menu');
 function pesapal_pay_create_admin_menu(){
 	add_object_page(__('Pesapal Pay'), __('Pesapal Pay'), 'edit_others_posts', 'pesapal-pay', '', PESAPAL_PAY_PLUGIN_URL . '/pesapal_pay.png');
 	add_submenu_page('pesapal-pay', __('Settings'), __('Settings'), 'edit_others_posts', 'pesapal-pay', 'pesapal_pay_setup');
+	add_submenu_page('pesapal-pay', __('Form Settings'), __('Form Settings'), 'edit_others_posts', 'pesapal-pay-forms', 'pesapal_pay_form_setup');
 	add_submenu_page('pesapal-pay', __('Payment Log'), __('Payment Log'), 'edit_others_posts', 'pesapal-pay-payment-log', 'pesapal_pay_payment_log');
 }
 
@@ -72,6 +81,9 @@ function pesapal_pay_create_admin_menu(){
  * Admin options
  */
 function pesapal_pay_setup(){
+	?>
+	<div class="wrap">
+	<?php
 	if(@$_POST['pesapal_settings']){
 		$required_fields = array(
 								'customer_key' => '',
@@ -91,6 +103,11 @@ function pesapal_pay_setup(){
 		$required_fields['form_function'] = $_POST['form_function'];
 		$required_fields['thankyou_page'] = $_POST['thankyou_page'];
 		update_option('pesapal_pay_setup', $required_fields);
+		?>
+		<div id="message" class="updated fade">
+			<h3><?php _e('Settings Updated'); ?></h3>
+		</div>
+		<?php
 	}
 	$options = get_option('pesapal_pay_setup');
 	$form_invoice = $options['form_invoice'];
@@ -105,10 +122,10 @@ function pesapal_pay_setup(){
 		$options['form_invoice'] = $form_invoice;
 		$options['form_email'] = $form_email;
 		$options['form_cost'] = $form_cost;
-		update_option('pesapal_pay_setup', $required_fields);
+		update_option('pesapal_pay_setup', $options);
 	}
 	?>
-	<div class="wrap">
+	
 		<h2><?php _e("Pesapal Pay Settings"); ?></h2>
 		<form method="POST" action="">
 			<table class="widefat">
@@ -191,10 +208,112 @@ function pesapal_pay_setup(){
 	<?php
 }
 
+/**
+ * Form settings
+ */
+function pesapal_pay_form_setup(){
+	?>
+	<div class="wrap">
+	<?php
+	if(@$_POST['pesapal_pay_form_setup'] && check_admin_referer('pesapal_pay_form_settings','pesapal_pay_form_settings_noncename')){
+		$total = 10;
+		$form_elem = array();
+		while($total > 0){
+			if(!empty($_POST['name_'.$total])){
+				$form_elem[$total]['name'] = @$_POST['name_'.$total];
+				$form_elem[$total]['type'] = @$_POST['type_'.$total];
+				$form_elem[$total]['uname'] = @$_POST['u_name_'.$total];
+				$form_elem[$total]['initial'] = @$_POST['initial_'.$total];
+			}
+			$total--;
+		}
+		update_option('pesapal_pay_form_settings', $form_elem);
+		?>
+		<div id="message" class="updated fade">
+			<h3><?php _e('Settings Updated'); ?></h3>
+		</div>
+		<?php
+	}
+	$form_elements = array('Text' => 'text' ,'Text Area' => 'textarea','Paragraph' => 'paragraph');
+	$pesapal_form_elem = get_option('pesapal_pay_form_settings');
+	$options = get_option('pesapal_pay_setup');
+	$form_email = $options['form_email'];
+	?>
+	<h2><?php _e('Configure extra fileds to be shown in your form'); ?></h2>
+		<form method="POST" action="<?php echo esc_url($_SERVER['REQUEST_URI']); ?>">
+			<?php wp_nonce_field('pesapal_pay_form_settings','pesapal_pay_form_settings_noncename'); ?>
+			<div class="dg_settings">
+				<p class="submit">
+					<input class='button-primary' type='submit' name='pesapal_pay_form_setup' value='<?php _e('Save Options'); ?>'/><br/>
+				</p>
+				<table width="100%" border="0" class="widefat">
+					<thead>
+						<tr>
+							<th align="left" scope="col"><?php _e('Name'); ?></th>
+							<th align="left" scope="col"><?php _e('Type'); ?></th>
+							<th align="left" scope="col"><?php _e('Unique Name'); ?></th>
+						</tr>
+					</thead>
+					
+					<tfoot>
+						<tr>
+							<th align="left" scope="col"><?php _e('Name'); ?></th>
+							<th align="left" scope="col"><?php _e('Type'); ?></th>
+							<th align="left" scope="col"><?php _e('Unique Name'); ?></th>
+						</tr>
+					</tfoot>
+					
+					<tbody>
+						<tr>
+							<td><?php _e("Email "); ?></td>
+							<td><?php _e("Text "); ?></td>
+							<td><?php _e($form_email); ?></td>
+						</tr>
+						<?php
+							$total = 10;
+							while($total > 0){
+								
+								?>
+								<tr>
+									<td><input type="text" name="name_<?php echo $total; ?>" value="<?php echo $pesapal_form_elem[$total]['name']; ?>"/></td>
+									<td>
+										<select name="type_<?php echo $total; ?>">
+											<?php
+												foreach ($form_elements as $forms => $form) {
+													$cont_selected = '';
+													if ($pesapal_form_elem[$total]['type'] === $form) {
+														$cont_selected = 'selected="selected"';
+													}
+													?>
+													<option value="<?php echo $form; ?>" <?php echo $cont_selected; ?> ><?php echo _e($forms); ?></option>
+													<?php
+												}
+											?>
+										</select>
+									</td>
+									<td><input type="text" name="u_name_<?php echo $total; ?>" value="<?php echo $pesapal_form_elem[$total]['uname']; ?>" /></td>
+								</tr>
+								<?php
+								$total --;
+							}
+						?>
+					</tbody>
+				</table>
+				<p class="submit">
+					<input class='button button-primary' type='submit' name='pesapal_pay_form_setup' value='<?php _e('Save Options'); ?>'/>
+				</p>
+			</div>
+		</form>
+	</div><?php
+}
+
+/**
+ * Payment Log
+ */
 function pesapal_pay_payment_log(){
 	global $wpdb;
 	$table_name = $wpdb->prefix."pesapal_pay";
-	echo '<a class="button add-new-h2" href="' . get_bloginfo('wpurl') . '/wp-admin/admin.php?page=pesapal-pay-payment-log&delete_all=true">Delete All</a>';
+	
 	if (@$_GET['delete_all'] === 'true') {
 		$wpdb->query("DELETE FROM `{$table_name}`");
 	}
@@ -215,6 +334,7 @@ function pesapal_pay_payment_log(){
 	$sql .= " LIMIT {$action_offset}, {$per_page}";
 	$results = $wpdb->get_results($sql);
 	if (is_array($results) && count($results) > 0) {
+		echo '<a class="button add-new-h2" href="' . get_bloginfo('wpurl') . '/wp-admin/admin.php?page=pesapal-pay-payment-log&delete_all=true">Delete All</a>';
 		if ($page_links) {
 			?>
 			<div class="tablenav">
@@ -373,7 +493,44 @@ function pesapal_pay_payment_form($atts){
 				'amount' => '10'), $atts));
 	$options = get_option('pesapal_pay_setup');
 	
-	$output = '<form id="pesapal_checkout">
+	$pesapal_form_elem = get_option('pesapal_pay_form_settings');
+	if (is_array($pesapal_form_elem) && count($pesapal_form_elem) > 0) {
+		$output = '<form id="pesapal_checkout">
+				<input type="hidden" name="ppcform" id="ppcform" value="ppcform"/>
+				<input type="hidden" name="ajax" value="true" />
+				<input type="hidden" name="action" value="pesapal_save_transaction"/>
+				<input type="hidden" name="ppamount" value="'.$amount.'"/>
+				<fieldset>
+				<div class="control-group">
+					<label>Email</label>		
+					<div><input type="text" class="required" value="" id="ppemail" name="ppemail"></div>
+				</div>';
+		$total = 10;
+		while($total > 0){
+			$input_type = $pesapal_form_elem[$total]['type'];
+			if($input_type == 'text'){
+				$input_type = '<input type="text" class="'.$pesapal_form_elem[$total]['uname'].'_input" name="'.$pesapal_form_elem[$total]['uname'].'" value="'.$pesapal_form_elem[$total]['initial'].'" id="'.$pesapal_form_elem[$total]['uname'].'" />';
+			}else if($input_type == 'textarea'){
+				$input_type = '<textarea class="'.$pesapal_form_elem[$total]['uname'].'_input" name="'.$pesapal_form_elem[$total]['uname'].'" id="'.$pesapal_form_elem[$total]['uname'].'" >'.$pesapal_form_elem[$total]['initial'].'</textarea>';
+			}else if($input_type == 'checkbox'){
+				$input_type = '<input type="checkbox" class="'.$pesapal_form_elem[$total]['uname'].'_input" name="'.$pesapal_form_elem[$total]['uname'].'" id="'.$pesapal_form_elem[$total]['uname'].'" />';
+			}else if($input_type == 'paragraph'){
+				$input_type = '<p class="'.$pesapal_form_elem[$total]['uname'].'_input">'.$pesapal_form_elem[$total]['initial'].'</p>';
+			}
+			$output .= '<div class="control-group">';
+			$output .= '<label for="'.$pesapal_form_elem[$total]['uname'].'" class="'.$pesapal_form_elem[$total]['uname'].'">'.$pesapal_form_elem[$total]['name'].'</label>';
+			$output .= '<div>';
+			$output .= $input_type;
+			$output .= '</div>';
+			$output .= '</div>';
+			
+		}
+		$output .= '</fieldset>';
+		$output .= '</form>';
+		$output .= '<button name="pespal_pay" id="pespal_pay_btn">'.$button_name.'</button>';
+	}else{
+	
+		$output = '<form id="pesapal_checkout">
 				<input type="hidden" name="ppform" id="ppform" value="ppform"/>
 				<input type="hidden" name="ajax" value="true" />
 				<input type="hidden" name="action" value="pesapal_save_transaction"/>
@@ -395,6 +552,7 @@ function pesapal_pay_payment_form($atts){
 				</fieldset>	 	 
 			</form>
 		<button name="pespal_pay" id="pespal_pay_btn">'.$button_name.'</button>';
+	}
 	$output .= '<script type="text/javascript">';
 	$output .= 'jQuery(document).ready(function(){';
 	$output .= 'jQuery("#pespal_pay_btn").click(function(){';
@@ -569,12 +727,29 @@ function pesapal_save_transaction(){
 	}
 	$firstname = '';
 	$lastname = '';
+	$order_info = "";
 	if(@$_REQUEST['ppform']){
 		$form_invoice =pesapal_pay_generate_order_id();
 		$firstname = $_REQUEST['ppfname'];
 		$lastname = $_REQUEST['pplname'];
 		$form_email = $_REQUEST['ppemail'];
 		$form_cost = $_REQUEST['ppamount'];
+	}else if(@$_REQUEST['ppcform']){
+		$form_invoice =pesapal_pay_generate_order_id();
+		$form_email = $_REQUEST['ppemail'];
+		$firstname = $form_email;
+		$lastname = $form_email;
+		$count = 10;
+		$pesapal_form_elem = get_option('pesapal_pay_form_settings');
+		$order_form_info = array();
+		$order_info_array = $_REQUEST;
+		while($count > 0){
+			if(!empty($order_info_array[$pesapal_form_elem[$count]['uname']])){
+				$order_form_info[][$pesapal_form_elem[$count]['name']] = $order_info_array[$pesapal_form_elem[$count]['uname']];
+			}
+			$count--;
+		}
+		$order_info = json_encode($order_form_info);
 	}else{
 		//Form info
 		
@@ -611,7 +786,7 @@ function pesapal_save_transaction(){
 	
 	$form_cost = floatval($form_cost);
 	
-	$sql = "INSERT INTO {$table_name}(`date`,`email`,`firstname`,`lastname`,`total`,`invoice`,`payment_status`) VALUES(now(), '{$form_email}', {$form_cost}, '{$form_invoice}','Pending')";
+	$sql = "INSERT INTO {$table_name}(`date`,`email`,`firstname`,`lastname`,`total`,`invoice`,`order_info`,`payment_status`) VALUES(now(), '{$form_email}', {$form_cost}, '{$form_invoice}','{$order_info}','Pending')";
 	
 	$wpdb->query($sql);
 	
