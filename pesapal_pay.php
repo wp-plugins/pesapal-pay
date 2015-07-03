@@ -2,147 +2,963 @@
 /*
 Plugin Name: Pesapal Pay
 Description: A quick way to integrate pesapal to your website to handle the payment process. All you need to do is set up what parameters to capture from the form and the plugin will do the rest
-Version: 1.3.3
+Version: 2.0
 Author: rixeo
 Author URI: http://thebunch.co.ke/
 Plugin URI: http://thebunch.co.ke/
 */
 
-define('PESAPAL_PAY_PLUGIN_URL', WP_PLUGIN_URL.'/'.dirname(plugin_basename(__FILE__)));
-define('PESAPAL_PAY_PLUGIN_DIR', WP_PLUGIN_DIR.'/'.dirname(plugin_basename(__FILE__)));
-
-
-require_once(PESAPAL_PAY_PLUGIN_DIR.'/OAuth.php');
-require_once(PESAPAL_PAY_PLUGIN_DIR.'/pesapal_pay_donate_widget.php');
-
-/**
- * Set up database
- */
-add_action( 'init', 'pesapal_pay_setup_database');
-function pesapal_pay_setup_database(){
-	global $wpdb;
-	$table_name = $wpdb->prefix."pesapal_pay";
-	if($wpdb->get_var("show tables like '$table_name'") != $table_name) {
-		$sql =  "CREATE TABLE `$table_name` (
-		`id` INT( 5 ) NOT NULL AUTO_INCREMENT,
-		`invoice` VARCHAR(50) NOT NULL,
-		`date` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		`email` VARCHAR(100) NOT NULL,
-		`total` FLOAT NOT NULL,
-		`payment_status` ENUM ('Pending', 'Paid', 'Canceled'),
-		UNIQUE (`invoice`),
-		PRIMARY KEY  (id)
-		)";
-		require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-		dbDelta($sql);
-	}
-	if($wpdb->get_var("show tables like '$table_name'") == $table_name) {
-		$pesapal_pay_database_update = get_option('pesapal_pay_database_update');
-		if(empty($pesapal_pay_database_update)){
-			$alter_sql = "ALTER TABLE `$table_name` ADD COLUMN `firstname` VARCHAR(100) NULL AFTER `email`, ADD COLUMN `lastname` VARCHAR(100) NULL AFTER `firstname`";
-			$wpdb->query($alter_sql);
-			update_option('pesapal_pay_database_update', 1);
-		}
+class PesaPal_Pay{
+	
+	/**
+	 * Uniquely identify plugin version
+	 * Bust caches based on this value
+	 *
+	 * @since 2.0
+	 *
+	 * @var string
+	 */
+	var $version = '2.0';
+	
+	/**
+	 * Plugin Directory
+	 *
+	 * @since 2.0
+	 *
+	 * @var string
+	 */
+	var $plugin_dir	= '';
+	
+	/**
+	 * Plugin URL
+	 *
+	 * @since 2.0
+	 *
+	 * @var string
+	 */
+	var $plugin_url= '';
+	
+	/**
+	 * Plugin File
+	 *
+	 * @since 2.0
+	 *
+	 * @var string
+	 */
+	var $plugin_file= '';
+	
+	/**
+	 * Post URL for PesaPal
+	 *
+	 * @since 2.0
+	 *
+	 * @var string
+	 */
+	var $post_url = 'https://www.pesapal.com/api/PostPesapalDirectOrderV4';
 		
-		//ADD column for extra order info
-		$pesapal_pay_database_update_options = get_option('pesapal_pay_database_update_options');
-		if(empty($pesapal_pay_database_update_options)){
-			$alter_sql = "ALTER TABLE `$table_name` ADD COLUMN `order_info` LONGTEXT NULL";
-			$wpdb->query($alter_sql);
-			update_option('pesapal_pay_database_update_options', 1);
-		}
+		
+	/**
+	 * Status Request URL for PesaPal
+	 *
+	 * @since 2.0
+	 *
+	 * @var string
+	 */
+	var $status_request = 'https://www.pesapal.com/api/querypaymentstatus';
+
+	
+	function __construct() {
+		$this->init_vars();
+		
+		//custom post type
+		add_action('init', array(&$this, 'custom_post_type'));
+		
+		
+		//Lets install
+		add_action( 'init', array( &$this, 'install' ) );
+		
+		
+		//manage orders page
+		add_filter( 'manage_pesapal_pay_posts_columns', array( &$this, 'manage_orders_columns' ) );
+		add_action( 'manage_pesapal_pay_posts_custom_column', array( &$this, 'manage_orders_custom_columns' ), 10, 2 );
+		add_filter( 'manage_edit-pesapal_pay_sortable_columns', array( &$this,'manage_orders_sortable_columns') );
+		add_filter('views_edit-pesapal_pay', array( &$this,'post_status_lables'), 10, 1);
+		add_filter('bulk_actions-edit-pesapal_pay',array( &$this, 'manage_bulk_actions' ));
+		
+		//Meta Boxes
+		add_action('add_meta_boxes', array(&$this,'set_up_meta_box'));
+		add_action('save_post', array(&$this,'meta_save'));
+		
+		
+		//Create and register Admin menu
+		add_action("admin_menu", array(&$this, 'admin_menu' ));
+		
+		
+		//Content filter
+		add_filter( 'the_content', array(&$this, 'content_filter' ) );
+		
+		//Script for Ajax
+		add_action( 'admin_print_scripts', array(&$this,'admin_inline_js') );
+		
+		//Ajax for order status
+		add_action('wp_ajax_pesapal_change_order_status', array(&$this, 'change_order_status') );
+		
+		
+		//Ajax actions to save transaction
+		add_action( 'wp_ajax_nopriv_pesapal_save_transaction', array(&$this,'save_transaction'));
+		add_action( 'wp_ajax_pesapal_save_transaction', array(&$this,'save_transaction'));
+		
+		//IPN Return
+		add_action( 'wp_ajax_nopriv_pesapalpay_ipn_return', array(&$this,'ipn_return'));
+		add_action( 'wp_ajax_pesapalpay_ipn_return', array(&$this,'ipn_return'));
+		
 	}
-}
-
-/**
- * Load Resources
- */
-add_action( 'init', 'pesapal_pay_resources');
-function pesapal_pay_resources(){
-	wp_enqueue_script('pesapal_pay_js', PESAPAL_PAY_PLUGIN_URL.'/pesapal_pay.js', array('jquery'), '', false);
-	wp_enqueue_script("pesapal_pay_js");
-	wp_localize_script('pesapal_pay_js', 'p_pay_js', array( 'p_pay_url' => get_bloginfo('url') , 'ajaxurl' => admin_url('admin-ajax.php')) );
-}
-/**
- * Create Admin menu
- */
-add_action('admin_menu', 'pesapal_pay_create_admin_menu');
-function pesapal_pay_create_admin_menu(){
-	add_object_page(__('Pesapal Pay'), __('Pesapal Pay'), 'edit_others_posts', 'pesapal-pay', '', PESAPAL_PAY_PLUGIN_URL . '/pesapal_pay.png');
-	add_submenu_page('pesapal-pay', __('Settings'), __('Settings'), 'edit_others_posts', 'pesapal-pay', 'pesapal_pay_setup');
-	add_submenu_page('pesapal-pay', __('Form Settings'), __('Form Settings'), 'edit_others_posts', 'pesapal-pay-forms', 'pesapal_pay_form_setup');
-	add_submenu_page('pesapal-pay', __('Payment Log'), __('Payment Log'), 'edit_others_posts', 'pesapal-pay-payment-log', 'pesapal_pay_payment_log');
-}
-
-
-
-
-/**
- * Admin options
- */
-function pesapal_pay_setup(){
-	?>
-	<div class="wrap">
-	<?php
-	if(@$_POST['pesapal_settings']){
-		$required_fields = array(
+	
+	/**
+	 * Initialise the variables we want to use
+	 *
+	 * @since 2.0
+	 */
+	function init_vars(){
+		$this->plugin_file	 = __FILE__;
+		$this->plugin_dir	 = plugin_dir_path( __FILE__ ) . 'pesapal_pay/';
+		$this->plugin_url	 = plugin_dir_url( __FILE__ ) . 'pesapal_pay/';
+	}
+	
+	/**
+	 * Install
+	 *
+	 * @since 2.0
+	 */
+	function install(){
+		
+		$old_settings	 = $this->get_options();
+		$old_version	 = get_option( 'pesapal_pay_version' );
+		
+		//Default settings
+		$default_settings = array(
 								'customer_key' => '',
 								'customer_secret' => '',
 								'sandbox' => '',
-								'form_invoice' => '',
-								'form_email' => '',
-								'form_cost' => '',
+								'form_invoice' => 'pesapal_pay_invoice',
+								'form_email' => 'pesapal_pay_email',
+								'form_cost' => 'pesapal_pay_cost',
 								'form_function' => '',
 								'thankyou_page' => '');
-		$required_fields['customer_key'] = $_POST['customer_key'];
-		$required_fields['customer_secret'] = $_POST['customer_secret'];
-		$required_fields['sandbox'] = $_POST['sandbox'];
-		$required_fields['form_invoice'] = $_POST['form_invoice'];
-		$required_fields['form_email'] = $_POST['form_email'];
-		$required_fields['form_cost'] = $_POST['form_cost'];
-		$required_fields['form_function'] = $_POST['form_function'];
-		$required_fields['thankyou_page'] = $_POST['thankyou_page'];
-		update_option('pesapal_pay_setup', $required_fields);
+								
+		$default_settings	 = apply_filters( 'pespal_default_settings', $default_settings );
+		$settings			 = wp_parse_args( (array) $old_settings, $default_settings );
+		update_option( 'pesapal_pay_setup', $settings );
+		
+		if ( empty( $old_version ) ) 
+			$this->update_20();
+								
+		update_option( 'pesapal_pay_version', $this->version );
+		
+		require_once($this->plugin_dir.'addons/pesapal_pay_shortcodes.php'); //Load shortcodes
+		require_once($this->plugin_dir.'addons/pesapal_pay_donate_widget.php'); //Load widget
+	}
+	
+	/**
+	 * Get Options
+	 *
+	 * @since 2.0
+	 *
+	 * @return Array
+	 */
+	function get_options(){
+		return get_option( 'pesapal_pay_setup' );
+	}
+	
+	/**
+	 * Update Options
+	 *
+	 * @since 2.0
+	 */
+	function update_options($settings){
+		update_option( 'pesapal_pay_setup', $settings );
+	}
+	
+	/**
+	 * Update from old version
+	 *
+	 * @since 2.0
+	 */
+	function update_20(){
+		global $wpdb;
+		$table_name = $wpdb->prefix."pesapal_pay";
+		if($wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name) {
+			$sql = "SELECT * FROM {$table_name} ORDER BY `id`";
+			$results = $wpdb->get_results($sql);
+			if (is_array($results) && count($results) > 0) {
+				foreach ($results as $result) {
+					$post_status = '';
+					switch($result->payment_status){
+						case 'Pending':
+							$post_status = 'order_pending';
+							break;
+						case 'Paid':
+							$post_status = 'order_paid';
+							break;
+						case 'Canceled':
+							$post_status = 'order_cancelled';
+							break;
+					}
+					$post_data = array(
+							'post_title' => $result->invoice,
+							'post_content' => '',
+							'post_status' => $post_status,
+							'post_type' => 'pesapal_pay',
+							'post_date' => $result->date
+							);
+					$new_post_id = wp_insert_post($post_data);
+					if ($new_post_id) {
+						$pesapal_pay_info = array();
+						$pesapal_pay_info[ 0 ][ 'invoice' ] = $result->invoice;
+						$pesapal_pay_info[ 0 ][ 'email' ] = $result->email;
+						$pesapal_pay_info[ 0 ][ 'fname' ] = $result->firstname;
+						$pesapal_pay_info[ 0 ][ 'lname' ] = $result->lastname;
+						$pesapal_pay_info[ 0 ][ 'total' ] = $result->total;
+                        update_post_meta($new_post_id, 'pesapal_pay_info', $pesapal_pay_info);
+                    }
+				}
+			}
+			$wpdb->query("DROP TABLE IF EXISTS $table_name");
+		}
+	}
+	
+	/**
+	 * Custom Post Type for transactions
+	 *
+	 * @since 2.0
+	 */
+	function custom_post_type(){
+	
+		//get proper icon format
+		$icon = version_compare( $wp_version, '3.8', '>=' ) ? 'dashicons-cart' : $this->plugin_url . 'images/pesapal_pay.png';
+		
+		// Register custom pesapal_pay post type
+		register_post_type( 'pesapal_pay',
+			array(
+				'labels'		 => array(
+					'name' => __( 'PesaPal Pay'),
+					'singular_name'	 => __( 'Transaction'),
+					'edit'			 => __( 'Edit'),
+					'view_item'		 => __( 'View Transaction'),
+					'search_items'	 => __( 'Search Transactions'),
+					'not_found'		 => __( 'No Transactions Found')
+				),
+			'description'		 => __( 'PesaPal Pay Transactions'),
+			'menu_icon' => 		 $icon,
+			'public' => true,
+			'publicly_queryable' => true,
+			'has_archive' => true,
+			'show_ui' => true,
+			'show_in_menu' => true, 
+			'query_var' => true,
+			'capability_type'	 => 'post',
+			'hierarchical'		 => false,
+			'rewrite'			 => false,
+			'supports'			 => array('title'),
+			'capabilities' => array(
+				'create_posts' => false, // Removes support for the "Add New" function
+			  ),
+			'map_meta_cap' => true
+			)
+		);
+		
+		
+		
+		//register custom post statuses for our orders
+		register_post_status( 'order_pending', array(
+			'label'			 => _x( 'Pending Orders', 'post'),
+			'label_count'	 => array( __( 'Pending <span class="count">(%s)</span>'), __( 'Pending <span class="count">(%s)</span>') ),
+			'post_type'		 => 'pesapal_pay',
+			'public'		 => true,
+			'exclude_from_search' => false,
+			'show_in_admin_all_list'    => true,
+			'show_in_admin_status_list' => true
+		) );
+		register_post_status( 'order_paid', array(
+			'label'			 => _x( 'Paid Orders', 'post'),
+			'label_count'	 => array( __( 'Paid <span class="count">(%s)</span>'), __( 'Paid <span class="count">(%s)</span>') ),
+			'post_type'		 => 'pesapal_pay',
+			'public'		 => true,
+			'exclude_from_search' => false,
+			'show_in_admin_all_list'    => true,
+			'show_in_admin_status_list' => true
+		) );
+		register_post_status( 'order_cancelled', array(
+			'label'			 => _x( 'Cancelled Orders', 'post'),
+			'label_count'	 => array( __( 'Cancelled <span class="count">(%s)</span>'), __( 'Cancelled <span class="count">(%s)</span>') ),
+			'post_type'		 => 'pesapal_pay',
+			'public'		 => true,
+			'exclude_from_search' => false,
+			'show_in_admin_all_list'    => true,
+			'show_in_admin_status_list' => true
+		) );
+		register_post_status( 'trash', array(
+			'label'						 => _x( 'Trash', 'post' ),
+			'label_count'				 => _n_noop( 'Trash <span class="count">(%s)</span>', 'Trash <span class="count">(%s)</span>' ),
+			'show_in_admin_status_list'	 => true,
+			'post_type'					 => 'pesapal_pay',
+			'public'					 => false
+		) );
+	}
+	
+	
+	/**
+	 * Show header lables
+	 *
+	 * @since 2.0
+	 */
+	function post_status_lables($views){
+		$edit_url = admin_url( 'edit.php?post_type=pesapal_pay' );
+		$views['order_pending'] = '<a href="'.$edit_url.'&post_status=order_pending">Pending</a>';
+		$views['order_paid'] = '<a href="'.$edit_url.'&post_status=order_paid">Paid</a>';
+		$views['order_cancelled'] = '<a href="'.$edit_url.'&post_status=order_cancelled">Cancelled</a>';
+		return $views;
+	}
+	
+	/**
+	 * Add custom column header
+	 *
+	 * @since 2.0
+	 */
+	function manage_orders_columns( $old_columns ) {
+		$columns[ 'cb' ] = '<input type="checkbox" />';
+		$columns[ 'pp_orders_id' ]		 = __( 'Invoice');
+		$columns[ 'pp_orders_email' ]	 = __( 'Email');
+		$columns[ 'pp_orders_fname' ]	 = __( 'First Name');
+		$columns[ 'pp_orders_lname' ]	 = __( 'Last Name');
+		$columns[ 'pp_orders_total' ]	 = __( 'Total');
+		$columns[ 'pp_orders_status' ]	 = __( 'Status');
+		$columns[ 'pp_orders_date' ]	 = __( 'Order Date');
+
+		return $columns;
+	}
+	
+	/**
+	 * Add custom column header data
+	 *
+	 * @since 2.0
+	 */
+	function manage_orders_custom_columns($column, $id){
+		$post = get_post($id); 
+		$meta = get_post_custom($id);
+		
+		
+		//unserialize
+		foreach ( $meta as $key => $val )
+			$meta[ $key ]	 = array_map( 'maybe_unserialize', $val );
+			
+		switch ( $column ) {
+			case "pp_orders_status":
+				if ( $post->post_status == 'order_pending' )
+					$text	 = __( 'Pending');
+				else if ( $post->post_status == 'order_paid' )
+					$text	 = __( 'Paid');
+				else if ( $post->post_status == 'order_cancelled' )
+					$text	 = __( 'Cancelled');
+				else if ( $post->post_status == 'trash' )
+					$text	 = __( 'Trashed');
+				?>
+				<span id="pesapal_order_status_<?php echo $id; ?>"><?php echo $text; ?></span>
+				<div class="row-actions">
+					<span class="edit">
+						<a href="javascript:void(null);" onclick="pesapal_pay_status('<?php echo $id; ?>');"><?php _e("Change status"); ?></a>
+					</span>
+				</div>
+				<?php
+				break;
+				
+			case "pp_orders_date":
+				$t_time	 = get_the_time( __( 'Y/m/d g:i:s A' ) );
+				$m_time	 = $post->post_date;
+				$time	 = get_post_time( 'G', true, $post );
+
+				$time_diff = time() - $time;
+
+				if ( $time_diff > 0 && $time_diff < 24 * 60 * 60 )
+					$h_time	 = sprintf( __( '%s ago' ), human_time_diff( $time ) );
+				else
+					$h_time	 = mysql2date( __( 'Y/m/d' ), $m_time );
+				echo '<abbr title="' . $t_time . '">' . $h_time . '</abbr>';
+				break;
+			case "pp_orders_id":
+				$order_id	 = $meta[ "pesapal_pay_info" ][ 0 ][0][ 'invoice' ];
+				?>
+				<strong>
+					<?php echo $order_id ?>
+				</strong>
+				<?php
+				break;
+			case "pp_orders_email":
+				echo $meta[ "pesapal_pay_info" ][0][ 0 ][ 'email' ];
+				break;
+			case "pp_orders_fname":
+				echo $meta[ "pesapal_pay_info" ][0][ 0 ][ 'fname' ];
+				break;
+			case "pp_orders_lname":
+				echo $meta[ "pesapal_pay_info" ][0][ 0 ][ 'lname' ];
+				break;
+			case "pp_orders_total":
+				echo $meta[ "pesapal_pay_info" ][0][ 0 ][ 'total' ];
+				break;
+		}
+	}
+	
+	/**
+	 * Make columns sortable
+	 *
+	 * @since 2.0
+	 */
+	function manage_orders_sortable_columns( $columns){
+		$columns[ 'pp_orders_id' ]		 = 'title';
+		$columns[ 'pp_orders_status' ]	 = 'post_status';
+		$columns[ 'pp_orders_date' ]	 = 'date';
+		return $columns;
+	}
+	
+	/**
+	 * Manage Bulk Actions
+	 *
+	 * @since 2.0
+	 */
+	function manage_bulk_actions($actions){
+		unset( $actions['edit'] );
+		return $actions;
+	}
+	
+	/**
+	 * Save Order
+	 *
+	 * @since 2.0
+	 *
+	 * @param String $status  - the transaction status
+	 * @param String $invoice - the invoice id
+	 * @param String $email   - the email
+	 * @param String $fname   - the first name
+	 * @param String $lname   - the last name
+	 * @param Double $total   - the amount
+	 *
+	 */
+	function save_order($status, $invoice,$email,$fname,$lname,$total){
+		$post_data = array(
+				'post_title' => $invoice,
+				'post_content' => '',
+				'post_status' => $status,
+				'post_type' => 'pesapal_pay'
+				);
+		$new_post_id = wp_insert_post($post_data);
+		if ($new_post_id) {
+			$pesapal_pay_info = array();
+			$pesapal_pay_info[ 0 ][ 'invoice' ] = $invoice;
+			$pesapal_pay_info[ 0 ][ 'email' ] = $email;
+			$pesapal_pay_info[ 0 ][ 'fname' ] = $fname;
+			$pesapal_pay_info[ 0 ][ 'lname' ] = $lname;
+			$pesapal_pay_info[ 0 ][ 'total' ] = $total;
+			update_post_meta($new_post_id, 'pesapal_pay_info', $pesapal_pay_info);
+		}
+	}
+	
+	/**
+	 * Change Order Status
+	 *
+	 * @since 2.0
+	 *
+	 * @return void
+	 */
+	function change_order_status(){
+		$order_id = intval($_POST['id']);
+		$order_status = 'Pending';
+		$new_status = '';
+		$post = get_post($order_id); 
+		if ($post) {
+			$current_status = $post->post_status;
+			if ($current_status === "order_pending") {
+				$order_status = 'Paid';
+				$new_status = 'order_paid';
+			}else if ($current_status === "order_paid"){
+				$order_status = 'Cancelled';
+				$new_status = 'order_cancelled';
+			}else if ($current_status === "order_cancelled"){
+				$order_status = 'Pending';
+				$new_status = 'order_pending';
+			}else {
+				$order_status = 'Cancelled';
+				$new_status = 'order_paid';
+			}
+			
+			$my_post = array(
+				  'ID'           => $post->ID,
+				  'post_status'  => $new_status
+			);
+			wp_update_post( $my_post );
+		}
+		
+		die($order_status);
+	}
+	
+	/**
+	 * Inline JS
+	 *
+	 * @since 2.0
+	 */
+	function admin_inline_js(){
 		?>
-		<div id="message" class="updated fade">
-			<h3><?php _e('Settings Updated'); ?></h3>
+		<script type="text/javascript">
+			function pesapal_pay_status(id){
+				jQuery.ajax({
+					type: "POST",
+					url: '<?php echo admin_url('admin-ajax.php'); ?>',
+					data: 'action=pesapal_change_order_status&id=' + id,
+					success:function(msg){
+						jQuery('span#pesapal_order_status_'+id).html(msg);
+					}
+				});
+			}
+		</script>
+		<?php
+	}
+	
+	/**
+	 * Save Transaction
+	 *
+	 * @since 2.0
+	 *
+	 * @return void
+	 */
+	function save_transaction(){
+	
+		require_once($this->plugin_dir.'lib/OAuth.php'); //Load the PesaPal lib
+		
+		$options = $this->get_options();
+		$form_function = $options['form_function'];
+		if(function_exists ($form_function)){
+			call_user_func($form_function);
+		}
+		$firstname = '';
+		$lastname = '';
+		$form_invoice = $this->generate_order_id();
+		if(@$_REQUEST['ppform']){
+			$firstname = $_REQUEST['ppfname'];
+			$lastname = $_REQUEST['pplname'];
+			$form_email = $_REQUEST['ppemail'];
+			$form_cost = $_REQUEST['ppamount'];
+		}else if(@$_REQUEST['ppcform']){
+			$form_email = $_REQUEST['ppemail'];
+			$firstname = $form_email;
+			$lastname = $form_email;
+		}else{
+			//Form info
+			
+			if(@$_REQUEST['pesapal_donate_no_invoice']){
+				$form_invoice = $this->generate_order_id();
+			}else{
+				if(@$_REQUEST['pesapal_donate_invoice']){
+					$form_invoice = $_REQUEST['pesapal_donate_invoice'];
+				}else{
+					$form_invoice = $_REQUEST[$options['form_invoice']];
+				}
+			}
+			if(empty($form_invoice)){
+				$form_invoice = $this->generate_order_id();
+			}
+			
+			if(@$_REQUEST['pesapal_donate_email']){
+				$form_email = $_REQUEST['pesapal_donate_email'];
+			}else{
+				$form_email = $_REQUEST[$options['form_email']];
+			}
+			$firstname = $form_email;
+			$lastname = $form_email;
+			
+			if(@$_REQUEST['pesapal_donate_amount']){
+				$form_cost = $_REQUEST['pesapal_donate_amount'];
+			}else{
+				$form_cost = $_REQUEST[$options['form_cost']];
+			}
+		}
+		$form_cost = floatval($form_cost);
+		
+		$this->save_order('order_pending', $form_invoice,$form_email,$firstname,$lastname,$form_cost); //Save Order
+		
+		
+		$return_path = get_page_link($options['thankyou_page']);
+		$check_return_path = explode('?', $return_path);
+		if (count($check_return_path) > 1) {
+			$return_path .= '&id=' . $form_invoice.'&pesapal_ipn_return=true';
+		} else {
+			$return_path .= '?id=' . $form_invoice.'&pesapal_ipn_return=true';
+		}
+		
+		$token = $params = NULL;
+		$consumer_key = $options['customer_key'];
+		$consumer_secret = $options['customer_secret'];
+		$signature_method = new OAuthSignatureMethod_HMAC_SHA1();
+		
+		//get form details
+		$desc = 'Your Order No.: '.$form_invoice;
+		$type = 'MERCHANT';
+		$reference = $form_invoice;
+		$first_name = $firstname;
+		$fullnames = $firstname.' '.$lastname;
+		$last_name = $lastname;
+		$email = $form_email;
+		$username = $email; //same as email
+		$phonenumber = '';//leave blank
+		$payment_method = '';//leave blank
+		$code = '';//leave blank
+		
+		$callback_url = $return_path; //redirect url, the page that will handle the response from pesapal.
+		$post_xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><PesapalDirectOrderInfo xmlns:xsi=\"http://www.w3.org/2001/XMLSchemainstance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" Amount=\"".$form_cost."\" Description=\"".$desc."\" Code=\"".$code."\" Type=\"".$type."\" PaymentMethod=\"".$payment_method."\" Reference=\"".$reference."\" FirstName=\"".$first_name."\" LastName=\"".$last_name."\" Email=\"".$email."\" PhoneNumber=\"".$phonenumber."\" UserName=\"".$username."\" xmlns=\"http://www.pesapal.com\" />";
+		$post_xml = htmlentities($post_xml);
+		
+		$consumer = new OAuthConsumer($consumer_key, $consumer_secret);
+		//post transaction to pesapal
+		$pp_post_url = $this->post_url;
+		$iframe_src = OAuthRequest::from_consumer_and_token($consumer, $token, "GET", $pp_post_url, $params);
+		$iframe_src->set_parameter("oauth_callback", $callback_url);
+		$iframe_src->set_parameter("pesapal_request_data", $post_xml);
+		$iframe_src->sign_request($signature_method, $consumer, $token);
+		
+		$output = '<iframe src="'.$iframe_src.'" width="100%" height="620px"  scrolling="no" frameBorder="0" >';
+		$output .= '</iframe>';
+		echo $output;
+		exit();
+	}
+	
+	/**
+	 * IPN Return
+	 *
+	 * @since 2.0
+	 *
+	 * @return void
+	 */
+	function ipn_return(){
+		require_once($this->plugin_dir.'lib/OAuth.php'); //Load the PesaPal lib
+		
+		$options = $this->get_options();
+		
+		$consumer_key = $options['customer_key'];
+		$consumer_secret = $options['customer_secret'];
+		
+		$transaction_tracking_id = $_REQUEST['pesapal_transaction_tracking_id'];
+		$payment_notification = $_REQUEST['pesapal_notification_type'];
+		$invoice = $_REQUEST['pesapal_merchant_reference'];
+		$statusrequestAPI = $this->status_request;
+		if($pesapalNotification=="CHANGE" && $pesapalTrackingId!=''){
+			$token = $params = NULL;
+			$consumer = new OAuthConsumer($consumer_key, $consumer_secret);
+			$signature_method = new OAuthSignatureMethod_HMAC_SHA1();
+
+			//get transaction status
+			$request_status = OAuthRequest::from_consumer_and_token($consumer, $token, "GET", $statusrequestAPI, $params);
+			$request_status->set_parameter("pesapal_merchant_reference", $pesapal_merchant_reference);
+			$request_status->set_parameter("pesapal_transaction_tracking_id",$invoice);
+			$request_status->sign_request($signature_method, $consumer, $token);
+			$ch = curl_init();
+			curl_setopt($ch, CURLOPT_URL, $request_status);
+			curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+			curl_setopt($ch, CURLOPT_HEADER, 1);
+			curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+			 if(defined('CURL_PROXY_REQUIRED')) if (CURL_PROXY_REQUIRED == 'True'){
+				$proxy_tunnel_flag = (defined('CURL_PROXY_TUNNEL_FLAG') && strtoupper(CURL_PROXY_TUNNEL_FLAG) == 'FALSE') ? false : true;
+				curl_setopt ($ch, CURLOPT_HTTPPROXYTUNNEL, $proxy_tunnel_flag);
+				curl_setopt ($ch, CURLOPT_PROXYTYPE, CURLPROXY_HTTP);
+				curl_setopt ($ch, CURLOPT_PROXY, CURL_PROXY_SERVER_DETAILS);
+			}
+
+			$response = curl_exec($ch);
+
+			$header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+			$raw_header  = substr($response, 0, $header_size - 4);
+			$headerArray = explode("\r\n\r\n", $raw_header);
+			$header      = $headerArray[count($headerArray) - 1];
+
+			 //transaction status
+			$elements = preg_split("/=/",substr($response, $header_size));
+			$status = $elements[1];
+
+			curl_close ($ch);
+			switch ($status) {
+				case 'PENDING':
+					$updated_status = 'order_pending';
+					break;
+				case 'COMPLETED':
+					$updated_status = 'order_paid';
+					break;
+				case 'FAILED':
+					$updated_status = 'order_cancelled';
+					break;
+				default:
+					$updated_status = 'order_cancelled';
+					break;
+			}
+			$page = $this->get_transaction($invoice);
+			if($page){
+				$my_post = array(
+					  'ID'           => $page->ID,
+					  'post_status'  => $updated_status
+				 );
+				 wp_update_post( $my_post );
+			}
+			
+		}
+	}
+	
+	/**
+	 * Get Transaction 
+	 *
+	 * @since 2.0
+	 *
+	 * @param String $invoice - the invoice
+	 *
+	 * @return OBJECT
+	 */
+	function get_transaction($invoice){
+		return get_page_by_title($invoice);
+	}
+		
+	/**
+	 * Create Meta Box 
+	 *
+	 * @since 2.0
+	 *
+	 * @return void
+	 */
+	function set_up_meta_box(){
+		$post_types = array( 'post', 'page');
+		foreach( $post_types as $post_type) {
+			add_meta_box( 
+				'pesapalpay_sectionid',
+				__( 'PesaPal Pay Options'),
+				array(&$this, 'post_inner_custom_box'),
+				$post_type,'side', 'high'
+			);
+		}
+	}
+	
+	/**
+	 * The Meta Box
+	 *
+	 */
+	function post_inner_custom_box($post){
+		wp_nonce_field( plugin_basename( __FILE__ ), 'pp_pay_noncename' );
+		$post_id = $post->ID;
+		$content_price = get_post_meta($post_id, 'pp_pay_price', true);
+		$button_name = get_post_meta($post_id, 'pp_pay_button_name', true);
+		$pp_pay_button_sc = get_post_meta($post_id, 'pp_pay_button_sc', true);
+		?>
+		<div class="inside">
+			<p>
+				<label><?php _e('Price:');?> :</label>
+				<input type="text" value="<?php echo $content_price; ?>" name="pp_pay_price" id="pp_pay_price">
+			</p>
+			<p>
+				<label><?php _e('Unique button name:');?> :</label>
+				<input type="text" value="<?php echo $button_name; ?>" name="pp_pay_button_name" id="pp_pay_button_name">
+			</p>
+			<p>
+				<label><input type="checkbox" value="checked" name="pp_pay_button_sc" <?php echo ($pp_pay_button_sc == 'checked') ? "checked='checked'": ""; ?> /> <?php _e('Automatically add button shortcode');?></label>
+			</p>
 		</div>
 		<?php
 	}
-	$options = get_option('pesapal_pay_setup');
-	$form_invoice = $options['form_invoice'];
-	$form_email = $options['form_email'];
-	$form_cost = $options['form_cost'];
 	
-	if(empty($form_invoice) && empty($form_email) && empty($form_cost)){
-		$form_invoice = "pesapal_pay_invoice";
-		$form_email = "pesapal_pay_email";
-		$form_cost = "pesapal_pay_cost";
+	/**
+	 * Save Meta box values
+	 *
+	 * @since 2.0
+	 *
+	 * @return void
+	 */
+	function meta_save($post_id){
+		if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) 
+			return;
+			
+		if ( !wp_verify_nonce(@$_POST['pp_pay_noncename'], plugin_basename( __FILE__ ) ) )
+			return;
+		// Check permissions
+		if ( 'dg_product' == @$_POST['post_type'] ) {
+			if ( !current_user_can( 'edit_page', $post_id ) )
+				return;
+		}
+		else{
+			if ( !current_user_can( 'edit_post', $post_id ) )
+				return;
+		}
+		// for pp_pay_price
+		if (NULL == @$_POST['pp_pay_price']) {
+			//do nothing
+		} else {
+			$pp_pay_price = $_POST['pp_pay_price'];
+			update_post_meta($post_id, 'pp_pay_price', $pp_pay_price);
+		}
 		
-		$options['form_invoice'] = $form_invoice;
-		$options['form_email'] = $form_email;
-		$options['form_cost'] = $form_cost;
-		update_option('pesapal_pay_setup', $options);
+		// for pp_pay_button_name
+		if (NULL == @$_POST['pp_pay_button_name']) {
+			//do nothing
+		} else {
+			$pp_pay_button_name = $_POST['pp_pay_button_name'];
+			update_post_meta($post_id, 'pp_pay_button_name', $pp_pay_button_name);
+		}
+		
+		// for pp_pay_button_sc
+		if (NULL == @$_POST['pp_pay_button_sc']) {
+			//do nothing
+		} else {
+			$pp_pay_button_sc = @$_POST['pp_pay_button_sc'];
+			update_post_meta($post_id, 'pp_pay_button_sc', $pp_pay_button_sc);
+		}
 	}
-	?>
 	
-		<h2><?php _e("Pesapal Pay Settings"); ?></h2>
+	/**
+	 * Content Filter 
+	 *
+	 * @since 2.0
+	 *
+	 * @return String content
+	 */
+	function content_filter($content){
+		$post_id = $GLOBALS['post']->ID;
+		$content_price = get_post_meta($post_id, 'pp_pay_price', true);
+		$button_name = get_post_meta($post_id, 'pp_pay_button_name', true);
+		$pp_pay_button_sc = get_post_meta($post_id, 'pp_pay_button_sc', true);
+		if(!empty($pp_pay_button_sc)){
+			if($pp_pay_button_sc === 'checked'){
+				if(empty($button_name)){
+					$button_name = 'Buy Using Pesapal';
+				}
+				if(empty($content_price)){
+					$content_price = '10';
+				}
+				$content = $content.do_shortcode("[pesapal_pay_button button_name='$button_name' amount='$content_price' use_options='true']");
+			}
+		}
+		
+		return $content;
+	}
+	
+	/**
+	 * Create Settings 
+	 *
+	 * @since 2.0
+	 *
+	 * @return void
+	 */
+	function admin_menu(){
+		add_submenu_page('edit.php?post_type=pesapal_pay', __('Settings'), __('Settings'), 'edit_others_posts', 'settings', array(&$this,'admin_settings_page'));
+	}
+	
+	/** 
+	 * The admin header tabs
+	 *
+	 */
+	function admin_tabs($current = 'settings'){
+		$tabs = array( 'settings' => __('Settings'), 'shortcodes' => __('Shortcodes')); 
+		$links = array();
+		echo '<div id="icon-themes" class="icon32"><br></div>';
+		echo '<h2 class="nav-tab-wrapper">';
+		foreach( $tabs as $tab => $name ){
+			$class = ( $tab == $current ) ? ' nav-tab-active' : '';
+			echo "<a class='nav-tab$class' href='".admin_url('edit.php?post_type=pesapal_pay&page=settings')."&tab=$tab'>$name</a>";
+		}
+		echo '</h2>';
+	}
+	
+	/**
+	 * Admin settings page 
+	 *
+	 * @since 2.0
+	 *
+	 * @return void
+	 */
+	function admin_settings_page(){
+		global $pagenow;
+		if ( $pagenow == 'edit.php' && $_GET['post_type'] == 'pesapal_pay' && $_GET['page'] == 'settings'){ 
+		?>
+		<div class="wrap">
+			<h2><?php _e("PesaPal Pay Settings"); ?></h2>
+			<?php
+				if ( 'true' == esc_attr( $_GET['updated'] ) ) echo '<div class="updated" ><p>Settings updated.</p></div>';
+				
+				if ( isset ( $_GET['tab'] ) ) $this->admin_tabs($_GET['tab']); else $this->admin_tabs();
+			?>
+			<div id="poststuff">
+				<?php
+				$tab = 'settings';
+				if ( isset ( $_GET['tab'] ) ) $tab = $_GET['tab'];
+				switch ( $tab ){
+					case 'settings' :
+						$this->general_settings();
+					break;
+					
+					case 'shortcodes' :
+						$this->shortcodes();
+					break;
+				}
+				?>
+			</div>
+		</div>
+		<?php
+		}else{
+			die(__('Invalid access'));
+		}
+	}
+	
+	/** 
+	 * Admin general settings
+	 * 
+	 */
+	function general_settings(){
+		if(@$_POST['pesapal_settings']){
+			$required_fields = array(
+									'customer_key' => '',
+									'customer_secret' => '',
+									'sandbox' => '',
+									'form_invoice' => '',
+									'form_email' => '',
+									'form_cost' => '',
+									'form_function' => '',
+									'thankyou_page' => '');
+			$required_fields['customer_key'] = $_POST['customer_key'];
+			$required_fields['customer_secret'] = $_POST['customer_secret'];
+			$required_fields['sandbox'] = $_POST['sandbox'];
+			$required_fields['form_invoice'] = $_POST['form_invoice'];
+			$required_fields['form_email'] = $_POST['form_email'];
+			$required_fields['form_cost'] = $_POST['form_cost'];
+			$required_fields['form_function'] = $_POST['form_function'];
+			$required_fields['thankyou_page'] = $_POST['thankyou_page'];
+			$this->update_options($required_fields);
+			?>
+			<div id="message" class="updated fade">
+				<h3><?php _e('Settings Updated'); ?></h3>
+			</div>
+			<?php
+		}
+		$options = $this->get_options();
+		$form_invoice = $options['form_invoice'];
+		$form_email = $options['form_email'];
+		$form_cost = $options['form_cost'];
+		?>
 		<form method="POST" action="">
 			<table class="widefat">
 				<tr>
-				    <th scope="row"><?php _e('PesaPal Checkout') ?></th>
-				    <td>
+					<th scope="row"><?php _e('PesaPal Checkout') ?></th>
+					<td>
 						<p>
 							<?php _e('PesaPal requires Full names and email/phone number. To handle APN return requests, please set the url '); ?>
-							<strong><?php echo get_bloginfo('url').'?pesapal_ipn_return=true' ; ?></strong>
+							<strong><?php echo admin_url("admin-ajax.php?action=pesapalpay_ipn_return"); ?></strong>
 							<?php _e(' on your <a href="https://www.pesapal.com/merchantdashboard" target="_blank">pesapal</a> account settings'); ?>
 						</p>
 						
-				    </td>
+					</td>
 				</tr>
 				<tr>
-				    <th scope="row"><?php _e('PesaPal Merchant Credentials'); ?></th>
-				    <td>
+					<th scope="row"><?php _e('PesaPal Merchant Credentials'); ?></th>
+					<td>
 						<p>
 							<label><?php _e('Customer Key') ?><br />
 							  <input value="<?php echo $options['customer_key']; ?>" size="30" name="customer_key" type="text" />
@@ -153,7 +969,7 @@ function pesapal_pay_setup(){
 								 <input value="<?php echo $options['customer_secret']; ?>" size="30" name="customer_secret" type="text" />
 							</label>
 						</p>
-				    </td>
+					</td>
 				</tr>
 				<tr>
 					<th scope="row"><?php _e('PesaPal Form Settings. These are the names of the fields to be used by the gateway'); ?></th>
@@ -197,719 +1013,86 @@ function pesapal_pay_setup(){
 								</select>
 							</label>
 						</p>
-				    </td>
+					</td>
 				</tr>
 			</table>
 			<p class="submit">
 				<input class='button-primary' type='submit' name='pesapal_settings' value='<?php _e('Save Settings'); ?>'/><br/>
 			</p>
 		</form>
-	</div>
-	<?php
-}
-
-/**
- * Form settings
- */
-function pesapal_pay_form_setup(){
-	?>
-	<div class="wrap">
-	<?php
-	if(@$_POST['pesapal_pay_form_setup'] && check_admin_referer('pesapal_pay_form_settings','pesapal_pay_form_settings_noncename')){
-		$total = 10;
-		$form_elem = array();
-		while($total > 0){
-			if(!empty($_POST['name_'.$total])){
-				$form_elem[$total]['name'] = @$_POST['name_'.$total];
-				$form_elem[$total]['type'] = @$_POST['type_'.$total];
-				$form_elem[$total]['uname'] = @$_POST['u_name_'.$total];
-				$form_elem[$total]['initial'] = @$_POST['initial_'.$total];
-			}
-			$total--;
-		}
-		update_option('pesapal_pay_form_settings', $form_elem);
-		?>
-		<div id="message" class="updated fade">
-			<h3><?php _e('Settings Updated'); ?></h3>
-		</div>
 		<?php
 	}
-	$form_elements = array('Text' => 'text' ,'Text Area' => 'textarea','Paragraph' => 'paragraph');
-	$pesapal_form_elem = get_option('pesapal_pay_form_settings');
-	$options = get_option('pesapal_pay_setup');
-	$form_email = $options['form_email'];
-	?>
-	<h2><?php _e('Configure extra fileds to be shown in your form'); ?></h2>
-		<form method="POST" action="<?php echo esc_url($_SERVER['REQUEST_URI']); ?>">
-			<?php wp_nonce_field('pesapal_pay_form_settings','pesapal_pay_form_settings_noncename'); ?>
-			<div class="dg_settings">
-				<p class="submit">
-					<input class='button-primary' type='submit' name='pesapal_pay_form_setup' value='<?php _e('Save Options'); ?>'/><br/>
-				</p>
-				<table width="100%" border="0" class="widefat">
-					<thead>
-						<tr>
-							<th align="left" scope="col"><?php _e('Name'); ?></th>
-							<th align="left" scope="col"><?php _e('Type'); ?></th>
-							<th align="left" scope="col"><?php _e('Unique Name'); ?></th>
-						</tr>
-					</thead>
-					
-					<tfoot>
-						<tr>
-							<th align="left" scope="col"><?php _e('Name'); ?></th>
-							<th align="left" scope="col"><?php _e('Type'); ?></th>
-							<th align="left" scope="col"><?php _e('Unique Name'); ?></th>
-						</tr>
-					</tfoot>
-					
-					<tbody>
-						<tr>
-							<td><?php _e("Email "); ?></td>
-							<td><?php _e("Text "); ?></td>
-							<td><?php _e($form_email); ?></td>
-						</tr>
-						<?php
-							$total = 10;
-							while($total > 0){
-								
-								?>
-								<tr>
-									<td><input type="text" name="name_<?php echo $total; ?>" value="<?php echo $pesapal_form_elem[$total]['name']; ?>"/></td>
-									<td>
-										<select name="type_<?php echo $total; ?>">
-											<?php
-												foreach ($form_elements as $forms => $form) {
-													$cont_selected = '';
-													if ($pesapal_form_elem[$total]['type'] === $form) {
-														$cont_selected = 'selected="selected"';
-													}
-													?>
-													<option value="<?php echo $form; ?>" <?php echo $cont_selected; ?> ><?php echo _e($forms); ?></option>
-													<?php
-												}
-											?>
-										</select>
-									</td>
-									<td><input type="text" name="u_name_<?php echo $total; ?>" value="<?php echo $pesapal_form_elem[$total]['uname']; ?>" /></td>
-								</tr>
-								<?php
-								$total --;
-							}
-						?>
-					</tbody>
-				</table>
-				<p class="submit">
-					<input class='button button-primary' type='submit' name='pesapal_pay_form_setup' value='<?php _e('Save Options'); ?>'/>
-				</p>
-			</div>
-		</form>
-	</div><?php
-}
-
-/**
- * Payment Log
- */
-function pesapal_pay_payment_log(){
-	global $wpdb;
-	$table_name = $wpdb->prefix."pesapal_pay";
 	
-	if (@$_GET['delete_all'] === 'true') {
-		$wpdb->query("DELETE FROM `{$table_name}`");
-	}
-	$sql = "SELECT * FROM {$table_name} ORDER BY `id` DESC";
-	$pagenum = isset($_GET['paged']) ? $_GET['paged'] : 1;
-	$per_page = 15;
-	$action_count = count($wpdb->get_results($sql));
-	$total = ceil($action_count / $per_page);
-	$action_offset = ($pagenum-1) * $per_page;
-	$page_links = paginate_links( array(
-			'base' => add_query_arg( 'paged', '%#%' ),
-			'format' => '',
-			'prev_text' => __('&laquo;'),
-			'next_text' => __('&raquo;'),
-			'total' => ceil($action_count / $per_page),
-			'current' => $pagenum
-	));
-	$sql .= " LIMIT {$action_offset}, {$per_page}";
-	$results = $wpdb->get_results($sql);
-	if (is_array($results) && count($results) > 0) {
-		echo '<a class="button add-new-h2" href="' . get_bloginfo('wpurl') . '/wp-admin/admin.php?page=pesapal-pay-payment-log&delete_all=true">Delete All</a>';
-		if ($page_links) {
-			?>
-			<div class="tablenav">
-				<div class="tablenav-pages">
-					<?php
-					$page_links_text = sprintf( '<span class="displaying-num">' . __( 'Displaying %s&#8211;%s of %s' ) . '</span>%s',
-														number_format_i18n( ( $pagenum - 1 ) * $per_page + 1 ),
-														number_format_i18n( min( $pagenum * $per_page, $action_count ) ),
-														number_format_i18n( $action_count ),
-														$page_links
-														);
-					echo $page_links_text;
-					?>
-				</div>
-			</div>
-			<?php
-		}
+	/** 
+	 * Shortcodes to use
+	 * 
+	 */
+	function shortcodes(){
 		?>
-		<table class="widefat post fixed">
-			<thead>
-				<tr>
-					<th></th>
-					<th><?php _e("Invoice Number");?></th>
-					<th><?php _e("Email");?></th>
-					<th><?php _e("Date");?></th>
-					<th><?php _e("Amount");?></th>
-					<th><?php _e("Status");?></th>
-				</tr>
-			</thead>
-			<tbody>
-				<?php
-					$count = (($pagenum-1)*$per_page)+1;
-					foreach ($results as $result) {
-						?>
-						<tr id="pesapal_order_<?php echo $result->id; ?>">
-							<td><?php printf(__("%d"),$count);?></td>
-							<td>
-								<?php echo $result->invoice;?>
-								<p>
-									<a href="javascript:void(null);" onclick="pesapal_pay_delete('<?php echo $result->id; ?>');"><?php _e("Delete");?></a>
-								</p>
-							</td>
-							<td><?php printf(__("%s"),$result->email);?></td>
-							
-							<td><?php printf(__("%s"),$result->date);?></td>
-							<td><?php printf(__("%s"),$result->total);?></td>
-							<td><span id="pesapal_order_status_<?php echo $result->id; ?>"><?php printf(__("%s"),$result->payment_status);?></span> <a href="javascript:void(null);" onclick="pesapal_pay_status('<?php echo $result->id; ?>','<?php echo $result->payment_status; ?>');"><?php _e("Change status"); ?></a></td>
-						</tr>
-						<?php
-						$count++;
-					}
-				?>
-			</tbody>
+		<table class="widefat">
+			<tr>
+				<th scope="row"><?php _e('Payment Form'); ?></th>
+				<td>
+					<p>
+						[pesapal_pay_payment_form button_name='Buy Using Pesapal' amount='10'] 
+					</p>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><?php _e('Payment Button'); ?></th>
+				<td>
+					<p>
+						[pesapal_pay_button button_name='Buy Using Pesapal' amount='10' use_options='false'] <br/>
+						The use_options variable set to false will tell the shortcode to get parameters from a previos page. To use the button on a page, put [pesapal_pay_button button_name='Buy Using Pesapal' amount='10' use_options='true']
+					</p>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><?php _e('Donate Form'); ?></th>
+				<td>
+					<p>
+						[pesapal_donate] 
+					</p>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><?php _e('Verify transaction on thank you page'); ?></th>
+				<td>
+					<p>
+						[pesapal_verify_transaction] Download URL HERE [/pesapal_verify_transaction]
+					</p>
+				</td>
+			</tr>
 		</table>
 		<?php
-		if ($page_links) {
-			?>
-			<div class="tablenav">
-				<div class="tablenav-pages">
-					<?php
-					$page_links_text = sprintf( '<span class="displaying-num">' . __( 'Displaying %s&#8211;%s of %s' ) . '</span>%s',
-														number_format_i18n( ( $pagenum - 1 ) * $per_page + 1 ),
-														number_format_i18n( min( $pagenum * $per_page, $action_count ) ),
-														number_format_i18n( $action_count ),
-														$page_links
-														);
-					echo $page_links_text;
-					?>
-				</div>
-			</div>
-			<?php
-		}
-		?>
-		<script type="text/javascript">
-			function pesapal_pay_delete(id){
-				jQuery.ajax({
-					type: "POST",
-					url: '<?php echo admin_url('admin-ajax.php'); ?>',
-					data: 'action=pesapal_delete_order&id=' + id,
-					success:function(){
-						jQuery('tr#pesapal_order_'+id).remove();
-					}
-				});
-			}
-
-			function pesapal_pay_status(id,status){
-				jQuery.ajax({
-					type: "POST",
-					url: '<?php echo admin_url('admin-ajax.php'); ?>',
-					data: 'action=pesapal_change_order_status&id=' + id+'&current='+status,
-					success:function(msg){
-						jQuery('span#pesapal_order_status_'+id).html(msg);
-					}
-				});
-			}
-		</script>
-		<?php
-	}else{
-		 ?>
-		 <br/>
-		 <h2><?php _e('No Records Found'); ?></h2>
-		 <?php
 	}
 	
+	/**
+	 * Genrate Order ID 
+	 *
+	 * @since 2.0
+	 *
+	 * @return String
+	 */
+	function generate_order_id() {
+		$order_id = date('yzB');
+		$order_id = apply_filters( 'pesapal_pay_order_id', $order_id ); //Very important to make sure order numbers are unique and not sequential if filtering
+		return $order_id;
+	}
 }
+
 
 /**
- * Change status
- */
-add_action('wp_ajax_pesapal_change_order_status', 'pesapal_change_order_status');
-function pesapal_change_order_status() {
-	global $wpdb;
-	$table_name = $wpdb->prefix."pesapal_pay";
-	$order_id = intval($_POST['id']);
-	$current_status = $_POST['current'];
-	if ($order_id > 0) {
-		 if ($current_status === "Pending") {
-            $updated_status = "Paid";
-        }
-        elseif ($current_status === "Paid"){
-            $updated_status = "Canceled";
-        }
-        else {
-            $updated_status = "Pending";
-        }
-		$query = "UPDATE {$table_name} SET `payment_status`='{$updated_status}' WHERE `id`={$order_id}";
-		$wpdb->query($query);
-	}
-	
-	die($updated_status);
-}
-
-/** 
- * Delete Order
- */
-add_action('wp_ajax_pesapal_delete_order', 'pesapal_delete_order');
-function pesapal_delete_order() {
-	global $wpdb;
-	$table_name = $wpdb->prefix."pesapal_pay";
-	$order_id = intval($_POST['id']);
-	if ($order_id > 0) {
-		$query = "DELETE FROM {$table_name} WHERE `id`={$order_id}";
-		$wpdb->query($query);
-	}
-	die();
-}
-
-/**
- * Payment form
+ * Load plugin function during the WordPress init action
  *
- */
-add_shortcode('pesapal_pay_payment_form', 'pesapal_pay_payment_form');
-function pesapal_pay_payment_form($atts){
-	extract(shortcode_atts(array(
-				'button_name' => 'Buy Using Pesapal',
-				'amount' => '10'), $atts));
-	$options = get_option('pesapal_pay_setup');
-	
-	$pesapal_form_elem = get_option('pesapal_pay_form_settings');
-	if (is_array($pesapal_form_elem) && count($pesapal_form_elem) > 0) {
-		$output = '<form id="pesapal_checkout">
-				<input type="hidden" name="ppcform" id="ppcform" value="ppcform"/>
-				<input type="hidden" name="ajax" value="true" />
-				<input type="hidden" name="action" value="pesapal_save_transaction"/>
-				<input type="hidden" name="ppamount" value="'.$amount.'"/>
-				<fieldset>
-				<div class="control-group">
-					<label>Email</label>		
-					<div><input type="text" class="required" value="" id="ppemail" name="ppemail"></div>
-				</div>';
-		$total = 10;
-		while($total > 0){
-			$input_type = $pesapal_form_elem[$total]['type'];
-			if($input_type == 'text'){
-				$input_type = '<input type="text" class="'.$pesapal_form_elem[$total]['uname'].'_input" name="'.$pesapal_form_elem[$total]['uname'].'" value="'.$pesapal_form_elem[$total]['initial'].'" id="'.$pesapal_form_elem[$total]['uname'].'" />';
-			}else if($input_type == 'textarea'){
-				$input_type = '<textarea class="'.$pesapal_form_elem[$total]['uname'].'_input" name="'.$pesapal_form_elem[$total]['uname'].'" id="'.$pesapal_form_elem[$total]['uname'].'" >'.$pesapal_form_elem[$total]['initial'].'</textarea>';
-			}else if($input_type == 'checkbox'){
-				$input_type = '<input type="checkbox" class="'.$pesapal_form_elem[$total]['uname'].'_input" name="'.$pesapal_form_elem[$total]['uname'].'" id="'.$pesapal_form_elem[$total]['uname'].'" />';
-			}else if($input_type == 'paragraph'){
-				$input_type = '<p class="'.$pesapal_form_elem[$total]['uname'].'_input">'.$pesapal_form_elem[$total]['initial'].'</p>';
-			}
-			$output .= '<div class="control-group">';
-			$output .= '<label for="'.$pesapal_form_elem[$total]['uname'].'" class="'.$pesapal_form_elem[$total]['uname'].'">'.$pesapal_form_elem[$total]['name'].'</label>';
-			$output .= '<div>';
-			$output .= $input_type;
-			$output .= '</div>';
-			$output .= '</div>';
-			
-		}
-		$output .= '</fieldset>';
-		$output .= '</form>';
-		$output .= '<button name="pespal_pay" id="pespal_pay_btn">'.$button_name.'</button>';
-	}else{
-	
-		$output = '<form id="pesapal_checkout">
-				<input type="hidden" name="ppform" id="ppform" value="ppform"/>
-				<input type="hidden" name="ajax" value="true" />
-				<input type="hidden" name="action" value="pesapal_save_transaction"/>
-				<input type="hidden" name="ppamount" value="'.$amount.'"/>
-				<fieldset>
-					<legend> User Details</legend>
-					<div class="control-group">
-						<label>First Name</label>		
-						<div><input type="text" size="40" class="required" value="" id="ppfname" name="ppfname"></div>
-					</div>
-					<div class="control-group">
-						<label>Last Name</label>		
-						<div><input type="text" size="40" class="required" value="" id="pplname" name="pplname"></div>
-					</div>
-					<div class="control-group">
-						<label>Email</label>		
-						<div><input type="text" class="required" value="" id="ppemail" name="ppemail"></div>
-					</div>					
-				</fieldset>	 	 
-			</form>
-		<button name="pespal_pay" id="pespal_pay_btn">'.$button_name.'</button>';
-	}
-	$output .= '<script type="text/javascript">';
-	$output .= 'jQuery(document).ready(function(){';
-	$output .= 'jQuery("#pespal_pay_btn").click(function(){';
-	$output .= 'jQuery("#pespal_pay_btn").val("Processing......");';
-	$output .= 'jQuery.ajax({';
-	$output .= 'type: "POST",';
-	$output .= 'data: jQuery("#pesapal_checkout").serialize(),';
-	$output .= 'url: "'.admin_url('admin-ajax.php').'",';
-	$output .= 'success:function(data){';
-	$output .= 'jQuery("#pesapal_checkout").parent().html(data)';
-	$output .= '}';
-	$output .= '})';
-	$output .= '});';
-	$output .= '});';
-	$output .= '</script>';
-	return $output;
-}
-
-/**
- * Shortcode
- */
-add_shortcode('pesapal_pay_button', 'pesapal_pay_button');
-function pesapal_pay_button($atts){
-	$invoice = pesapal_pay_generate_order_id();
-	$user_email = get_bloginfo( 'admin_email' );
-	extract(shortcode_atts(array(
-				'button_name' => 'Pay Using Pesapal',
-				'amount' => '10',
-				'use_options' => 'false'), $atts));
-	$options = get_option('pesapal_pay_setup');
-	$formid= mt_rand();
-	if($use_options === 'false'){
-		
-		$output = '<form id="pesapal_checkout_'.$formid.'">
-					<input type="hidden" name="'.$options['form_invoice'].'" value="'.@$_REQUEST[$options['form_invoice']].'"/>
-					<input type="hidden" name="'.$options['form_email'].'" value="'.@$_REQUEST[$options['form_email']].'"/>
-					<input type="hidden" name="'.$options['form_cost'].'" value="'.@$_REQUEST[$options['form_cost']].'"/>
-					<input type="hidden" name="ajax" value="true" />
-					<input type="hidden" name="action" value="pesapal_save_transaction"/>
-					</form>
-					<button name="pespal_pay_'.$formid.'" id="pespal_pay_btn_'.$formid.'">'.$button_name.'</button>';
-	}else{
-		$output = '<form id="pesapal_checkout_'.$formid.'">
-					<input type="hidden" name="'.$options['form_invoice'].'" value="'.$invoice.'"/>
-					<input type="hidden" name="'.$options['form_email'].'" value="'.$user_email.'"/>
-					<input type="hidden" name="'.$options['form_cost'].'" value="'.$amount.'"/>
-					<input type="hidden" name="ajax" value="true" />
-					<input type="hidden" name="action" value="pesapal_save_transaction"/>
-					</form>
-					<button name="pespal_pay_'.$formid.'" id="pespal_pay_btn_'.$formid.'">'.$button_name.'</button>';
-	}
-	$output .= '<script type="text/javascript">';
-	$output .= 'jQuery(document).ready(function(){';
-	$output .= 'jQuery("#pespal_pay_btn_'.$formid.'").click(function(){';
-	$output .= 'jQuery("#pespal_pay_btn_'.$formid.'").val("Processing......");';
-	$output .= 'jQuery.ajax({';
-	$output .= 'type: "POST",';
-	$output .= 'data: jQuery("#pesapal_checkout_'.$formid.'").serialize(),';
-	$output .= 'url: "'.admin_url('admin-ajax.php').'",';
-	$output .= 'success:function(data){';
-	$output .= 'jQuery("#pesapal_checkout_'.$formid.'").parent().parent().html(data)';
-	$output .= '}';
-	$output .= '})';
-	$output .= '});';
-	$output .= '});';
-	$output .= '</script>';
-	
-	return $output;
-}
- 
-/** 
- *	Generate Invoice ID
- */
-function pesapal_pay_generate_order_id() {
-	$order_id = date('yzB');
-	$order_id = apply_filters( ' pesapal_pay_order_id', $order_id ); //Very important to make sure order numbers are unique and not sequential if filtering
-	return $order_id;
-}
-
-
-//PesaPal Donate Shortcode
-add_shortcode('pesapal_donate', 'pesapal_pay_donate');
-
-/**
- * Generate PesaPal Donate box
- */
-function pesapal_pay_donate($text){
-	$content = '<form id="pesapal_donate_widget">';
-	$content .= '<table class="pesapal_pay_widget_table">';
-	if(!empty($text)){
-		$content .= '<tr>';
-		$content .= '<td>';
-		$content .= $text;
-		$content .= '</td>';
-		$content .= '</tr>';
-	}
-	$content .= '<tr>';
-	$content .= '<td>';
-	$content .= __("Email :");
-	$content .= '<br/>';
-	$content .= '<input type="text" name="pesapal_donate_email" id="pesapal_donate_email" value=""/>';
-	$content .= '</td>';
-	$content .= '</tr>';
-	$content .= '<tr>';
-	$content .= '<td>';
-	$content .= __("Amount :");
-	$content .= '<br/>';
-	$content .= '<input type="text" name="pesapal_donate_amount" id="pesapal_donate_amount" value=""/>';
-	$content .= '</td>';
-	$content .= '</tr>';
-	$content .= '</table>';
-	$content .= '<input type="hidden" name="pesapal_donate_invoice" id="pesapal_donate_invoice" value="'.pesapal_pay_generate_order_id().'"/>';
-	$content .= '<input type="hidden" name="ajax" value="true" />';
-	$content .= '<input type="hidden" name="action" value="pesapal_save_transaction"/>';
-	$content .= '</form>';
-	$content .= '<button name="pespal_pay_donate" id="pespal_pay_donate">'.__("Donate Using PesaPal").'</button>';
-	$content .= '<script type="text/javascript">';
-	$content .= 'jQuery(document).ready(function(){';
-	$content .= 'jQuery("#pespal_pay_donate").click(function(){';
-	$content .= 'jQuery("#pespal_pay_donate").val("Processing......");';
-	$content .= 'jQuery.ajax({';
-	$content .= 'type: "POST",';
-	$content .= 'data: jQuery("#pesapal_donate_widget").serialize(),';
-	$content .= 'url: "'.admin_url('admin-ajax.php').'",';
-	$content .= 'success:function(data){';
-	$content .= 'jQuery("#pesapal_donate_widget").parent().html(data)';
-	$content .= '}';
-	$content .= '})';
-	$content .= '});';
-	$content .= '});';
-	$content .= '</script>';
-	return $content;
-}
-	
-/**
- * Verify a transaction is paid for. This is to secure the page content
+ * @since 2.0
  *
+ * @return void
  */
-add_shortcode('pesapal_verify_transaction', 'pesapal_verify_transaction');
-function pesapal_verify_transaction($atts, $content = null){
-	global $wpdb;
-	$table_name = $wpdb->prefix."pesapal_pay";
-	$transactionid = $_REQUEST['id']; //Get the id of the invoice
-	
-	$sql = "SELECT `id` FROM {$table_name} WHERE `invoice` = '{$transactionid}' AND `payment_status` = 'Paid'";
-	$invoice = $wpdb->get_var($sql);
-	if($invoice){
-		return $content;
-	}else{
-		return "Transaction not yet verified";
-	}
+function pesapal_pay_action_init() {
+	global $pesapal_pay;
+
+	$pesapal_pay = new PesaPal_Pay();
 }
-
-
-/**
- * Save Transaction
- */
-add_action( 'wp_ajax_nopriv_pesapal_save_transaction', 'pesapal_save_transaction');
-add_action( 'wp_ajax_pesapal_save_transaction', 'pesapal_save_transaction');
-function pesapal_save_transaction(){
-	global $wpdb;
-	$table_name = $wpdb->prefix."pesapal_pay";
-	$options = get_option('pesapal_pay_setup');
-	
-	$post_url = 'https://www.pesapal.com/api/PostPesapalDirectOrderV4';
-		
-	$status_request = 'https://www.pesapal.com/api/querypaymentstatus';
-		
-	$form_function = $options['form_function'];
-	if(function_exists ($form_function)){
-		call_user_func($form_function);
-	}
-	$firstname = '';
-	$lastname = '';
-	$order_info = "";
-	if(@$_REQUEST['ppform']){
-		$form_invoice =pesapal_pay_generate_order_id();
-		$firstname = $_REQUEST['ppfname'];
-		$lastname = $_REQUEST['pplname'];
-		$form_email = $_REQUEST['ppemail'];
-		$form_cost = $_REQUEST['ppamount'];
-	}else if(@$_REQUEST['ppcform']){
-		$form_invoice =pesapal_pay_generate_order_id();
-		$form_email = $_REQUEST['ppemail'];
-		$firstname = $form_email;
-		$lastname = $form_email;
-		$count = 10;
-		$pesapal_form_elem = get_option('pesapal_pay_form_settings');
-		$order_form_info = array();
-		$order_info_array = $_REQUEST;
-		while($count > 0){
-			if(!empty($order_info_array[$pesapal_form_elem[$count]['uname']])){
-				$order_form_info[][$pesapal_form_elem[$count]['name']] = $order_info_array[$pesapal_form_elem[$count]['uname']];
-			}
-			$count--;
-		}
-		$order_info = json_encode($order_form_info);
-	}else{
-		//Form info
-		
-		if(@$_REQUEST['pesapal_donate_no_invoice']){
-			$form_invoice =pesapal_pay_generate_order_id();
-		}else{
-			if(@$_REQUEST['pesapal_donate_invoice']){
-				$form_invoice = $_REQUEST['pesapal_donate_invoice'];
-			}else{
-				$form_invoice = $_REQUEST[$options['form_invoice']];
-			}
-		}
-		if(empty($form_invoice)){
-			$form_invoice =pesapal_pay_generate_order_id();
-		}
-		
-		if(@$_REQUEST['pesapal_donate_email']){
-			$form_email = $_REQUEST['pesapal_donate_email'];
-		}else{
-			$form_email = $_REQUEST[$options['form_email']];
-		}
-		$firstname = $form_email;
-		$lastname = $form_email;
-		
-		if(@$_REQUEST['pesapal_donate_amount']){
-			$form_cost = $_REQUEST['pesapal_donate_amount'];
-		}else{
-			$form_cost = $_REQUEST[$options['form_cost']];
-		}
-	}
-	
-	
-	
-	
-	$form_cost = floatval($form_cost);
-	
-	$sql = "INSERT INTO {$table_name}(`date`,`email`,`firstname`,`lastname`,`total`,`invoice`,`order_info`,`payment_status`) VALUES(now(), '{$form_email}', {$form_cost}, '{$form_invoice}','{$order_info}','Pending')";
-	
-	$wpdb->query($sql);
-	
-	$return_path = get_page_link($options['thankyou_page']);
-	$check_return_path = explode('?', $return_path);
-	if (count($check_return_path) > 1) {
-		$return_path .= '&id=' . $form_invoice.'&pesapal_ipn_return=true';
-	} else {
-		$return_path .= '?id=' . $form_invoice.'&pesapal_ipn_return=true';
-	}
-	
-	$token = $params = NULL;
-	$consumer_key = $options['customer_key'];
-	$consumer_secret = $options['customer_secret'];
-	$signature_method = new OAuthSignatureMethod_HMAC_SHA1();
-	
-	//get form details
-	$desc = 'Your Order No.: '.$form_invoice;
-	$type = 'MERCHANT';
-	$reference = $form_invoice;
-	$first_name = $firstname;
-	$fullnames = $firstname.' '.$lastname;
-	$last_name = $lastname;
-	$email = $form_email;
-	$username = $email; //same as email
-	$phonenumber = '';//leave blank
-	$payment_method = '';//leave blank
-	$code = '';//leave blank
-	
-	$callback_url = $return_path; //redirect url, the page that will handle the response from pesapal.
-	$post_xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><PesapalDirectOrderInfo xmlns:xsi=\"http://www.w3.org/2001/XMLSchemainstance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" Amount=\"".$form_cost."\" Description=\"".$desc."\" Code=\"".$code."\" Type=\"".$type."\" PaymentMethod=\"".$payment_method."\" Reference=\"".$reference."\" FirstName=\"".$first_name."\" LastName=\"".$last_name."\" Email=\"".$email."\" PhoneNumber=\"".$phonenumber."\" UserName=\"".$username."\" xmlns=\"http://www.pesapal.com\" />";
-	$post_xml = htmlentities($post_xml);
-	
-	$consumer = new OAuthConsumer($consumer_key, $consumer_secret);
-	//post transaction to pesapal
-	$pp_post_url = $post_url;
-	$iframe_src = OAuthRequest::from_consumer_and_token($consumer, $token, "GET", $pp_post_url, $params);
-	$iframe_src->set_parameter("oauth_callback", $callback_url);
-	$iframe_src->set_parameter("pesapal_request_data", $post_xml);
-	$iframe_src->sign_request($signature_method, $consumer, $token);
-	
-	$output = '<iframe src="'.$iframe_src.'" width="100%" height="620px"  scrolling="no" frameBorder="0" >';
-	$output .= '</iframe>';
-	echo $output;
-	exit();
-}
-
-
-/**
- * Handle IPN
- */
-if (@$_REQUEST['pesapal_ipn_return'] === 'true') {
-    add_action('init', 'pesapal_ipn_return');
-}
-add_action( 'wp_ajax_nopriv_pesapal_ipn_return', 'pesapal_ipn_return');
-add_action( 'wp_ajax_pesapal_ipn_return', 'pesapal_ipn_return');
-function pesapal_ipn_return(){
-	global $wpdb;
-	$table_name = $wpdb->prefix."pesapal_pay";
-	$options = get_option('pesapal_pay_setup');
-	
-	$post_url = 'https://www.pesapal.com/api/PostPesapalDirectOrderV4';
-		
-	$status_request = 'https://www.pesapal.com/api/querypaymentstatus';
-		
-	$consumer_key = $options['customer_key'];
-	$consumer_secret = $options['customer_secret'];
-	
-	$transaction_tracking_id = $_REQUEST['pesapal_transaction_tracking_id'];
-	$payment_notification = $_REQUEST['pesapal_notification_type'];
-	$invoice = $_REQUEST['pesapal_merchant_reference'];
-	$statusrequestAPI = $status_request;
-
-	if($pesapalNotification=="CHANGE" && $pesapalTrackingId!=''){
-		$token = $params = NULL;
-		$consumer = new OAuthConsumer($consumer_key, $consumer_secret);
-		$signature_method = new OAuthSignatureMethod_HMAC_SHA1();
-
-		//get transaction status
-		$request_status = OAuthRequest::from_consumer_and_token($consumer, $token, "GET", $statusrequestAPI, $params);
-		$request_status->set_parameter("pesapal_merchant_reference", $pesapal_merchant_reference);
-		$request_status->set_parameter("pesapal_transaction_tracking_id",$invoice);
-		$request_status->sign_request($signature_method, $consumer, $token);
-		$ch = curl_init();
-		curl_setopt($ch, CURLOPT_URL, $request_status);
-		curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-		curl_setopt($ch, CURLOPT_HEADER, 1);
-		curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
-		 if(defined('CURL_PROXY_REQUIRED')) if (CURL_PROXY_REQUIRED == 'True'){
-			$proxy_tunnel_flag = (defined('CURL_PROXY_TUNNEL_FLAG') && strtoupper(CURL_PROXY_TUNNEL_FLAG) == 'FALSE') ? false : true;
-			curl_setopt ($ch, CURLOPT_HTTPPROXYTUNNEL, $proxy_tunnel_flag);
-			curl_setopt ($ch, CURLOPT_PROXYTYPE, CURLPROXY_HTTP);
-			curl_setopt ($ch, CURLOPT_PROXY, CURL_PROXY_SERVER_DETAILS);
-		}
-
-		$response = curl_exec($ch);
-
-		$header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
-		$raw_header  = substr($response, 0, $header_size - 4);
-		$headerArray = explode("\r\n\r\n", $raw_header);
-		$header      = $headerArray[count($headerArray) - 1];
-
-		 //transaction status
-		$elements = preg_split("/=/",substr($response, $header_size));
-		$status = $elements[1];
-
-		curl_close ($ch);
-		switch ($status) {
-			case 'PENDING':
-				$updated_status = 'Pending';
-				break;
-			case 'COMPLETED':
-				$updated_status = 'Paid';
-				break;
-			case 'FAILED':
-				$updated_status = 'Canceled';
-				break;
-			default:
-				$updated_status = 'Canceled';
-				break;
-		}
-		$query = "UPDATE {$table_name} SET `payment_status`='{$updated_status}' WHERE `invoice`={$invoice}";
-		$wpdb->query($query);
-	}
-}
+add_action( 'init', 'pesapal_pay_action_init', 0 ); // load before widgets_init at 1
 ?>
