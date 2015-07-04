@@ -2,7 +2,7 @@
 /*
 Plugin Name: Pesapal Pay
 Description: A quick way to integrate pesapal to your website to handle the payment process. All you need to do is set up what parameters to capture from the form and the plugin will do the rest
-Version: 2.0
+Version: 2.1
 Author: rixeo
 Author URI: http://thebunch.co.ke/
 Plugin URI: http://thebunch.co.ke/
@@ -111,6 +111,9 @@ class PesaPal_Pay{
 		//IPN Return
 		add_action( 'wp_ajax_nopriv_pesapalpay_ipn_return', array(&$this,'ipn_return'));
 		add_action( 'wp_ajax_pesapalpay_ipn_return', array(&$this,'ipn_return'));
+		
+		add_action( 'wp_ajax_nopriv_pesapalpay_ipn_page_return', array(&$this,'ipn_page_return'));
+		add_action( 'wp_ajax_pesapalpay_ipn_page_return', array(&$this,'ipn_page_return'));
 		
 	}
 	
@@ -585,13 +588,7 @@ class PesaPal_Pay{
 		$this->save_order('order_pending', $form_invoice,$form_email,$firstname,$lastname,$form_cost); //Save Order
 		
 		
-		$return_path = get_page_link($options['thankyou_page']);
-		$check_return_path = explode('?', $return_path);
-		if (count($check_return_path) > 1) {
-			$return_path .= '&id=' . $form_invoice.'&pesapal_ipn_return=true';
-		} else {
-			$return_path .= '?id=' . $form_invoice.'&pesapal_ipn_return=true';
-		}
+		$return_path = admin_url("admin-ajax.php?action=pesapalpay_ipn_return");
 		
 		$token = $params = NULL;
 		$consumer_key = $options['customer_key'];
@@ -706,6 +703,95 @@ class PesaPal_Pay{
 			}
 			
 		}
+		exit;
+	}
+	
+	
+	/** 
+	 * Thank you page IPN
+	 *
+	 */
+	function ipn_page_return(){
+		require_once($this->plugin_dir.'lib/OAuth.php'); //Load the PesaPal lib
+		
+		$options = $this->get_options();
+		
+		$consumer_key = $options['customer_key'];
+		$consumer_secret = $options['customer_secret'];
+		
+		$transaction_tracking_id = $_REQUEST['pesapal_transaction_tracking_id'];
+		$payment_notification = $_REQUEST['pesapal_notification_type'];
+		$invoice = $_REQUEST['pesapal_merchant_reference'];
+		$statusrequestAPI = $this->status_request;
+		if($pesapalNotification=="CHANGE" && $pesapalTrackingId!=''){
+			$token = $params = NULL;
+			$consumer = new OAuthConsumer($consumer_key, $consumer_secret);
+			$signature_method = new OAuthSignatureMethod_HMAC_SHA1();
+
+			//get transaction status
+			$request_status = OAuthRequest::from_consumer_and_token($consumer, $token, "GET", $statusrequestAPI, $params);
+			$request_status->set_parameter("pesapal_merchant_reference", $pesapal_merchant_reference);
+			$request_status->set_parameter("pesapal_transaction_tracking_id",$invoice);
+			$request_status->sign_request($signature_method, $consumer, $token);
+			$ch = curl_init();
+			curl_setopt($ch, CURLOPT_URL, $request_status);
+			curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+			curl_setopt($ch, CURLOPT_HEADER, 1);
+			curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+			 if(defined('CURL_PROXY_REQUIRED')) if (CURL_PROXY_REQUIRED == 'True'){
+				$proxy_tunnel_flag = (defined('CURL_PROXY_TUNNEL_FLAG') && strtoupper(CURL_PROXY_TUNNEL_FLAG) == 'FALSE') ? false : true;
+				curl_setopt ($ch, CURLOPT_HTTPPROXYTUNNEL, $proxy_tunnel_flag);
+				curl_setopt ($ch, CURLOPT_PROXYTYPE, CURLPROXY_HTTP);
+				curl_setopt ($ch, CURLOPT_PROXY, CURL_PROXY_SERVER_DETAILS);
+			}
+
+			$response = curl_exec($ch);
+
+			$header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+			$raw_header  = substr($response, 0, $header_size - 4);
+			$headerArray = explode("\r\n\r\n", $raw_header);
+			$header      = $headerArray[count($headerArray) - 1];
+
+			 //transaction status
+			$elements = preg_split("/=/",substr($response, $header_size));
+			$status = $elements[1];
+
+			curl_close ($ch);
+			switch ($status) {
+				case 'PENDING':
+					$updated_status = 'order_pending';
+					break;
+				case 'COMPLETED':
+					$updated_status = 'order_paid';
+					break;
+				case 'FAILED':
+					$updated_status = 'order_cancelled';
+					break;
+				default:
+					$updated_status = 'order_cancelled';
+					break;
+			}
+			$page = $this->get_transaction($invoice);
+			if($page){
+				$my_post = array(
+					  'ID'           => $page->ID,
+					  'post_status'  => $updated_status
+				 );
+				 wp_update_post( $my_post );
+			}
+			
+		}
+		
+		$return_path = get_page_link($options['thankyou_page']);
+		$check_return_path = explode('?', $return_path);
+		if (count($check_return_path) > 1) {
+			$return_path .= '&id=' . $form_invoice;
+		} else {
+			$return_path .= '?id=' . $form_invoice;
+		}
+		
+		wp_redirect($return_path); 
+		exit; 
 	}
 	
 	/**
