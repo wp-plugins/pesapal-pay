@@ -1,10 +1,11 @@
 === PesaPal Pay ===
 Contributors: rixeo
+Donate link: http://www.dukagate.info/donate/
 Tags: Pesapal, e-commerce, ecommerce
 
 Requires at least: 3.0
-Tested up to: 4.1.1
-Stable tag: 1.3.3
+Tested up to: 4.2.2
+Stable tag: 2.2
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -13,7 +14,7 @@ PesaPal Pay allows you to easily integrate Pesapal to any ecommerce website
 == Description ==
 
 A quick way to integrate PesaPal to your website to handle the payment process. All you need to do is set up what parameters to capture from the form and the plugin will do the rest via the shortcode [pesapal_pay_button] where you can add the attribute button_name to be the text on the button. You can now alos accept donations via the PesaPal Donate Widget or using the shortcode [pesapal_donate].
-Call the javascript function pesapal_pay_no_invoice(parentdivId,email, amount) with parentdivId being the ID you want pesapal to be loaded
+There is now a meta box on a post of page to allow automatic shortcode addition
 
 Main Features:
 
@@ -22,7 +23,7 @@ Main Features:
 * Log PesaPal transactions
 * Allows calling of a function before the pesapal transaction
 * Accept Donations
-* Javascript Usage
+* Automatically add the PesaPal Pay button on any post of page using a meta box
 
 
 We are still working to make this excellent
@@ -31,9 +32,7 @@ We are still working to make this excellent
 
 1. Upload the pesapal_pay folder to the `/wp-content/plugins/` directory
 2. Activate the plugin through the 'Plugins' menu in WordPress
-3. Once the plugin is activated there will be an admin section where you can configure the pesapal settings
-4. Use the shortcode [pesapal_pay_button] to use pesapal
-5. Use the PesaPal Donate Widget to accept donations or use the shortcode [pesapal_donate]
+3. Once the plugin is activated, Naigate to the admin menu "Pesapal Pay"
 
 == Frequently Asked Questions ==
 
@@ -45,11 +44,25 @@ Just post the parameters to a payment page that has the pesapal shortcode on it
 = How do I use the shortcode? =
 Just put the shortcode on a page after the products page. The shortcode will look for the parameters you set up in the previous page and set them to be used in the transaction to PesaPal
 
-= How Do I use the Javascript Function =
-Just call pesapal_pay_no_invoice(parentdivId,email, amount) function after the form has been posted and get the returned parameters for email and total amount in kenyan shillings
+= How do I add a pay button to a page? =
+There is a meta box on each page and post that allows automatic addition of the shortcode at the botton of the page
+
 
 
 == Changelog ==
+
+= 2.2 =
+Added Currencies
+
+= 2.1 =
+Fix on thank you page
+
+= 2.0 =
+* Changed how we save trasnactions. Transactions are now saved as a custom post type. There is an update function that wil take care of the migration
+* Admin page now has a section to explain the shortcodes better
+* Meta box present on Pages and Posts to allow for easy addition of the button shortcode to any page
+* Removed Javascript function
+
 
 = 1.3.3 =
 Default Form options
