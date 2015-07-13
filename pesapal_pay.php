@@ -115,6 +115,8 @@ class PesaPal_Pay{
 		add_action( 'wp_ajax_nopriv_pesapalpay_ipn_page_return', array(&$this,'ipn_page_return'));
 		add_action( 'wp_ajax_pesapalpay_ipn_page_return', array(&$this,'ipn_page_return'));
 		
+		$this->load_plugins(); //Load plugins
+		
 	}
 	
 	/**
@@ -126,6 +128,7 @@ class PesaPal_Pay{
 		$this->plugin_file	 = __FILE__;
 		$this->plugin_dir	 = plugin_dir_path( __FILE__ ) . 'pesapal_pay/';
 		$this->plugin_url	 = plugin_dir_url( __FILE__ ) . 'pesapal_pay/';
+		require_once($this->plugin_dir.'lib/currencies.php'); //Load the currencies
 	}
 	
 	/**
@@ -142,7 +145,7 @@ class PesaPal_Pay{
 		$default_settings = array(
 								'customer_key' => '',
 								'customer_secret' => '',
-								'sandbox' => '',
+								'currency' => 'KES',
 								'form_invoice' => 'pesapal_pay_invoice',
 								'form_email' => 'pesapal_pay_email',
 								'form_cost' => 'pesapal_pay_cost',
@@ -160,6 +163,33 @@ class PesaPal_Pay{
 		
 		require_once($this->plugin_dir.'addons/pesapal_pay_shortcodes.php'); //Load shortcodes
 		require_once($this->plugin_dir.'addons/pesapal_pay_donate_widget.php'); //Load widget
+	}
+	
+	/**
+	 * Load plugins
+	 *
+	 * @since 2.1
+	 */
+	function load_plugins(){
+		$dir = $this->plugin_dir.'plugins/';
+		if ( !is_dir( $dir ) )
+			return;
+		if ( ! $dh = opendir( $dir ) )
+			return;
+			
+		while ( ( $plugin = readdir( $dh ) ) !== false ) {
+			if ( substr( $plugin, -4 ) == '.php' )
+				$plugins[] = $dir . $plugin;
+		}
+		closedir( $dh );
+		if(!empty($plugins)){
+		
+			sort( $plugins );
+
+			//include them suppressing errors
+			foreach ($plugins as $file)
+				@include_once( $file );
+		}
 	}
 	
 	/**
@@ -236,10 +266,7 @@ class PesaPal_Pay{
 	 * @since 2.0
 	 */
 	function custom_post_type(){
-	
-		//get proper icon format
-		$icon = version_compare( $wp_version, '3.8', '>=' ) ? 'dashicons-cart' : $this->plugin_url . 'images/pesapal_pay.png';
-		
+
 		// Register custom pesapal_pay post type
 		register_post_type( 'pesapal_pay',
 			array(
@@ -252,7 +279,7 @@ class PesaPal_Pay{
 					'not_found'		 => __( 'No Transactions Found')
 				),
 			'description'		 => __( 'PesaPal Pay Transactions'),
-			'menu_icon' => 		 $icon,
+			'menu_icon' => 		 $this->plugin_url . 'images/pesapal_pay.png',
 			'public' => true,
 			'publicly_queryable' => true,
 			'has_archive' => true,
@@ -525,6 +552,15 @@ class PesaPal_Pay{
 		<?php
 	}
 	
+	/** 
+	 * Load the OAuth.php file
+	 *
+	 * @since 2.1
+	 */
+	function load_pesapal_lib(){
+		require_once($this->plugin_dir.'lib/OAuth.php'); //Load the PesaPal lib
+	}
+	
 	/**
 	 * Save Transaction
 	 *
@@ -534,7 +570,7 @@ class PesaPal_Pay{
 	 */
 	function save_transaction(){
 	
-		require_once($this->plugin_dir.'lib/OAuth.php'); //Load the PesaPal lib
+		$this->load_pesapal_lib();
 		
 		$options = $this->get_options();
 		$form_function = $options['form_function'];
@@ -607,9 +643,76 @@ class PesaPal_Pay{
 		$phonenumber = '';//leave blank
 		$payment_method = '';//leave blank
 		$code = '';//leave blank
+		$currency = $options['currency'];
 		
 		$callback_url = $return_path; //redirect url, the page that will handle the response from pesapal.
-		$post_xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><PesapalDirectOrderInfo xmlns:xsi=\"http://www.w3.org/2001/XMLSchemainstance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" Amount=\"".$form_cost."\" Description=\"".$desc."\" Code=\"".$code."\" Type=\"".$type."\" PaymentMethod=\"".$payment_method."\" Reference=\"".$reference."\" FirstName=\"".$first_name."\" LastName=\"".$last_name."\" Email=\"".$email."\" PhoneNumber=\"".$phonenumber."\" UserName=\"".$username."\" xmlns=\"http://www.pesapal.com\" />";
+		$post_xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><PesapalDirectOrderInfo xmlns:xsi=\"http://www.w3.org/2001/XMLSchemainstance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" Amount=\"".$form_cost."\" Description=\"".$desc."\" Code=\"".$code."\" Currency=\"".$currency."\" Type=\"".$type."\" PaymentMethod=\"".$payment_method."\" Reference=\"".$reference."\" FirstName=\"".$first_name."\" LastName=\"".$last_name."\" Email=\"".$email."\" PhoneNumber=\"".$phonenumber."\" UserName=\"".$username."\" xmlns=\"http://www.pesapal.com\" />";
+		$post_xml = htmlentities($post_xml);
+		
+		$consumer = new OAuthConsumer($consumer_key, $consumer_secret);
+		//post transaction to pesapal
+		$pp_post_url = $this->post_url;
+		$iframe_src = OAuthRequest::from_consumer_and_token($consumer, $token, "GET", $pp_post_url, $params);
+		$iframe_src->set_parameter("oauth_callback", $callback_url);
+		$iframe_src->set_parameter("pesapal_request_data", $post_xml);
+		$iframe_src->sign_request($signature_method, $consumer, $token);
+		
+		$output = '<iframe src="'.$iframe_src.'" width="100%" height="620px"  scrolling="no" frameBorder="0" >';
+		$output .= '</iframe>';
+		echo $output;
+		exit();
+	}
+	
+	/**
+	 * Save Transaction passing variables
+	 *
+	 * @since 2.1
+	 *
+	 * @param String $firstname  - the names
+	 * @param String $form_email - the email
+	 * @param String $form_cost  - the cost
+	 *
+	 */
+	function save_transaction_with_values($firstname,$form_email,$form_cost){
+	
+		$this->load_pesapal_lib();
+		
+		$options = $this->get_options();
+		$form_function = $options['form_function'];
+		if(function_exists ($form_function)){
+			call_user_func($form_function);
+		}
+		$lastname = $firstname;
+		$form_invoice = $this->generate_order_id();
+		
+		$form_cost = floatval($form_cost);
+		
+		$this->save_order('order_pending', $form_invoice,$form_email,$firstname,$lastname,$form_cost); //Save Order
+		
+		
+		$return_path = admin_url("admin-ajax.php?action=pesapalpay_ipn_return");
+		
+		$token = $params = NULL;
+		$consumer_key = $options['customer_key'];
+		$consumer_secret = $options['customer_secret'];
+		$signature_method = new OAuthSignatureMethod_HMAC_SHA1();
+		
+		//get form details
+		$desc = 'Your Order No.: '.$form_invoice;
+		$type = 'MERCHANT';
+		$reference = $form_invoice;
+		$first_name = $firstname;
+		$fullnames = $firstname.' '.$lastname;
+		$last_name = $lastname;
+		$email = $form_email;
+		$username = $email; //same as email
+		$phonenumber = '';//leave blank
+		$payment_method = '';//leave blank
+		$code = '';//leave blank
+		$currency = $options['currency'];
+		
+		$callback_url = $return_path; //redirect url, the page that will handle the response from pesapal.
+		$post_xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?><PesapalDirectOrderInfo xmlns:xsi=\"http://www.w3.org/2001/XMLSchemainstance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" Amount=\"".$form_cost."\" Description=\"".$desc."\" Code=\"".$code."\" Currency=\"".$currency."\" Type=\"".$type."\" PaymentMethod=\"".$payment_method."\" Reference=\"".$reference."\" FirstName=\"".$first_name."\" LastName=\"".$last_name."\" Email=\"".$email."\" PhoneNumber=\"".$phonenumber."\" UserName=\"".$username."\" xmlns=\"http://www.pesapal.com\" />";
 		$post_xml = htmlentities($post_xml);
 		
 		$consumer = new OAuthConsumer($consumer_key, $consumer_secret);
@@ -634,7 +737,7 @@ class PesaPal_Pay{
 	 * @return void
 	 */
 	function ipn_return(){
-		require_once($this->plugin_dir.'lib/OAuth.php'); //Load the PesaPal lib
+		$this->load_pesapal_lib();
 		
 		$options = $this->get_options();
 		
@@ -712,7 +815,7 @@ class PesaPal_Pay{
 	 *
 	 */
 	function ipn_page_return(){
-		require_once($this->plugin_dir.'lib/OAuth.php'); //Load the PesaPal lib
+		$this->load_pesapal_lib();
 		
 		$options = $this->get_options();
 		
@@ -968,7 +1071,7 @@ class PesaPal_Pay{
 		<div class="wrap">
 			<h2><?php _e("PesaPal Pay Settings"); ?></h2>
 			<?php
-				if ( 'true' == esc_attr( $_GET['updated'] ) ) echo '<div class="updated" ><p>Settings updated.</p></div>';
+				if ( 'true' == esc_attr( @$_GET['updated'] ) ) echo '<div class="updated" ><p>Settings updated.</p></div>';
 				
 				if ( isset ( $_GET['tab'] ) ) $this->admin_tabs($_GET['tab']); else $this->admin_tabs();
 			?>
@@ -1003,7 +1106,7 @@ class PesaPal_Pay{
 			$required_fields = array(
 									'customer_key' => '',
 									'customer_secret' => '',
-									'sandbox' => '',
+									'currency' => '',
 									'form_invoice' => '',
 									'form_email' => '',
 									'form_cost' => '',
@@ -1011,7 +1114,7 @@ class PesaPal_Pay{
 									'thankyou_page' => '');
 			$required_fields['customer_key'] = $_POST['customer_key'];
 			$required_fields['customer_secret'] = $_POST['customer_secret'];
-			$required_fields['sandbox'] = $_POST['sandbox'];
+			$required_fields['currency'] = $_POST['currency'];
 			$required_fields['form_invoice'] = $_POST['form_invoice'];
 			$required_fields['form_email'] = $_POST['form_email'];
 			$required_fields['form_cost'] = $_POST['form_cost'];
@@ -1053,6 +1156,24 @@ class PesaPal_Pay{
 						<p>
 							<label><?php _e('Customer Secret') ?><br />
 								 <input value="<?php echo $options['customer_secret']; ?>" size="30" name="customer_secret" type="text" />
+							</label>
+						</p>
+						<p>
+							<label><?php _e('Currency'); ?><br />
+								<select name="currency">
+									<?php 
+									foreach ($this->currencies as $key => $value ) {
+										$cont_selected = '';
+										if ($options['currency'] == $key) {
+											$cont_selected = 'selected="selected"';
+										}
+										$option = '<option value="' .$key. '" '.$cont_selected.'>';
+										$option .= $value[0];
+										$option .= '</option>';
+										echo $option;
+									}
+									?>
+								</select>
 							</label>
 						</p>
 					</td>

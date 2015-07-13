@@ -28,7 +28,11 @@ function pesapal_pay_payment_form($atts){
 				<div class="control-group">
 					<label>Email</label>		
 					<div><input type="text" class="required" value="" id="ppemail" name="ppemail"></div>
-				</div>					
+				</div>	
+				<div class="control-group">
+					<label>Amount</label>		
+					<div> '.$amount.' ('.$options['currency'].')</div>
+				</div>				
 			</fieldset>	 	 
 		</form>
 	<button name="pespal_pay" id="pespal_pay_btn">'.$button_name.'</button>';
@@ -115,6 +119,7 @@ add_shortcode('pesapal_donate', 'pesapal_pay_donate');
 function pesapal_pay_donate($text){
 	global $pesapal_pay;
 	$invoice = $pesapal_pay->generate_order_id();
+	$options = $pesapal_pay->get_options();
 	$content = '<form id="pesapal_donate_widget">';
 	$content .= '<table class="pesapal_pay_widget_table">';
 	if(!empty($text)){
@@ -133,7 +138,8 @@ function pesapal_pay_donate($text){
 	$content .= '</tr>';
 	$content .= '<tr>';
 	$content .= '<td>';
-	$content .= __("Amount :");
+	$content .= __("Amount : ");
+	$content .= '('.$options['currency'].')';
 	$content .= '<br/>';
 	$content .= '<input type="text" name="pesapal_donate_amount" id="pesapal_donate_amount" value=""/>';
 	$content .= '</td>';
