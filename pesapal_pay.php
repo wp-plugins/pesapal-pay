@@ -2,7 +2,7 @@
 /*
 Plugin Name: Pesapal Pay
 Description: A quick way to integrate pesapal to your website to handle the payment process. All you need to do is set up what parameters to capture from the form and the plugin will do the rest
-Version: 2.1
+Version: 2.2
 Author: rixeo
 Author URI: http://thebunch.co.ke/
 Plugin URI: http://thebunch.co.ke/
@@ -18,7 +18,7 @@ class PesaPal_Pay{
 	 *
 	 * @var string
 	 */
-	var $version = '2.0';
+	var $version = '2.2';
 	
 	/**
 	 * Plugin Directory
