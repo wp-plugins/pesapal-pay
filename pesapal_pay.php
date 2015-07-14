@@ -2,7 +2,7 @@
 /*
 Plugin Name: Pesapal Pay
 Description: A quick way to integrate pesapal to your website to handle the payment process. All you need to do is set up what parameters to capture from the form and the plugin will do the rest
-Version: 2.2
+Version: 2.2.1
 Author: rixeo
 Author URI: http://thebunch.co.ke/
 Plugin URI: http://thebunch.co.ke/
@@ -18,7 +18,7 @@ class PesaPal_Pay{
 	 *
 	 * @var string
 	 */
-	var $version = '2.2';
+	var $version = '2.21';
 	
 	/**
 	 * Plugin Directory
@@ -657,7 +657,7 @@ class PesaPal_Pay{
 		$iframe_src->set_parameter("pesapal_request_data", $post_xml);
 		$iframe_src->sign_request($signature_method, $consumer, $token);
 		
-		$output = '<iframe src="'.$iframe_src.'" width="100%" height="620px"  scrolling="no" frameBorder="0" >';
+		$output = '<iframe src="'.$iframe_src.'" width="100%" style="min-height:620px; height:100%" scrolling="no" frameBorder="0" >';
 		$output .= '</iframe>';
 		echo $output;
 		exit();
@@ -723,7 +723,7 @@ class PesaPal_Pay{
 		$iframe_src->set_parameter("pesapal_request_data", $post_xml);
 		$iframe_src->sign_request($signature_method, $consumer, $token);
 		
-		$output = '<iframe src="'.$iframe_src.'" width="100%" height="620px"  scrolling="no" frameBorder="0" >';
+		$output = '<iframe src="'.$iframe_src.'" width="100%" style="min-height:620px; height:100%"  scrolling="no" frameBorder="0" >';
 		$output .= '</iframe>';
 		echo $output;
 		exit();
