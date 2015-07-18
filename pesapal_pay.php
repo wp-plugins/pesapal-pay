@@ -145,6 +145,7 @@ class PesaPal_Pay{
 		$default_settings = array(
 								'customer_key' => '',
 								'customer_secret' => '',
+								'full_frame' => 'false',
 								'currency' => 'KES',
 								'form_invoice' => 'pesapal_pay_invoice',
 								'form_email' => 'pesapal_pay_email',
@@ -657,7 +658,7 @@ class PesaPal_Pay{
 		$iframe_src->set_parameter("pesapal_request_data", $post_xml);
 		$iframe_src->sign_request($signature_method, $consumer, $token);
 		
-		$output = '<iframe src="'.$iframe_src.'" width="100%" style="min-height:620px; height:100%" scrolling="no" frameBorder="0" >';
+		$output = '<iframe src="'.$iframe_src.'" width="100%" height="100%" style="overflow:hidden;overflow-x:hidden;overflow-y:hidden;height:100%;width:100%;position:absolute;top:0px;left:0px;right:0px;bottom:0px" scrolling="no" frameBorder="0" >';
 		$output .= '</iframe>';
 		echo $output;
 		exit();
@@ -723,7 +724,7 @@ class PesaPal_Pay{
 		$iframe_src->set_parameter("pesapal_request_data", $post_xml);
 		$iframe_src->sign_request($signature_method, $consumer, $token);
 		
-		$output = '<iframe src="'.$iframe_src.'" width="100%" style="min-height:620px; height:100%"  scrolling="no" frameBorder="0" >';
+		$output = '<iframe src="'.$iframe_src.'" width="100%" height="100%" style="overflow:hidden;overflow-x:hidden;overflow-y:hidden;height:100%;width:100%;position:absolute;top:0px;left:0px;right:0px;bottom:0px"  scrolling="no" frameBorder="0" >';
 		$output .= '</iframe>';
 		echo $output;
 		exit();
@@ -1106,6 +1107,7 @@ class PesaPal_Pay{
 			$required_fields = array(
 									'customer_key' => '',
 									'customer_secret' => '',
+									'full_frame' => '',
 									'currency' => '',
 									'form_invoice' => '',
 									'form_email' => '',
@@ -1115,6 +1117,7 @@ class PesaPal_Pay{
 			$required_fields['customer_key'] = $_POST['customer_key'];
 			$required_fields['customer_secret'] = $_POST['customer_secret'];
 			$required_fields['currency'] = $_POST['currency'];
+			$required_fields['full_frame'] = $_POST['full_frame'];
 			$required_fields['form_invoice'] = $_POST['form_invoice'];
 			$required_fields['form_email'] = $_POST['form_email'];
 			$required_fields['form_cost'] = $_POST['form_cost'];
@@ -1217,6 +1220,14 @@ class PesaPal_Pay{
 										echo $option;
 									}
 									?>
+								</select>
+							</label>
+						</p>
+						<p>
+							<label><?php _e('Load Payment page in entire page'); ?> (<?php _e('This will replace your entire page content with the PesaPal payment form'); ?>)<br />
+								<select name="full_frame">
+									<option value="false" <?php selected( $options['full_frame'], 'false'); ?>><?php _e('No'); ?></option>
+									<option value="true" <?php selected( $options['full_frame'], 'true' ); ?>><?php _e('Yes'); ?></option>
 								</select>
 							</label>
 						</p>

@@ -10,7 +10,7 @@ function pesapal_pay_payment_form($atts){
 				'button_name' => 'Buy Using Pesapal',
 				'amount' => '10'), $atts));
 	$options = $pesapal_pay->get_options();
-	$output = '<form id="pesapal_checkout">
+	$output = '<form id="pesapal_checkout" class="pesapal_payment_form">
 			<input type="hidden" name="ppform" id="ppform" value="ppform"/>
 			<input type="hidden" name="ajax" value="true" />
 			<input type="hidden" name="action" value="pesapal_save_transaction"/>
@@ -46,7 +46,11 @@ function pesapal_pay_payment_form($atts){
 	$output .= 'data: jQuery("#pesapal_checkout").serialize(),';
 	$output .= 'url: "'.admin_url('admin-ajax.php').'",';
 	$output .= 'success:function(data){';
-	$output .= 'jQuery("#pesapal_checkout").parent().html(data)';
+	if($options['full_frame'] === 'true'){
+		$output .= 'jQuery("body").html(data)';
+	}else{
+		$output .= 'jQuery("#pesapal_checkout").parent().html(data)';
+	}
 	$output .= '}';
 	$output .= '})';
 	$output .= '});';
@@ -87,7 +91,7 @@ function pesapal_pay_button($atts){
 					<input type="hidden" name="ajax" value="true" />
 					<input type="hidden" name="action" value="pesapal_save_transaction"/>
 					</form>
-					<button name="pespal_pay_'.$formid.'" id="pespal_pay_btn_'.$formid.'">'.$button_name.'</button>';
+					<button name="pespal_pay_'.$formid.'" id="pespal_pay_btn_'.$formid.'" class="pesapal_btn">'.$button_name.'</button>';
 	}
 	$output .= '<script type="text/javascript">';
 	$output .= 'jQuery(document).ready(function(){';
@@ -98,7 +102,11 @@ function pesapal_pay_button($atts){
 	$output .= 'data: jQuery("#pesapal_checkout_'.$formid.'").serialize(),';
 	$output .= 'url: "'.admin_url('admin-ajax.php').'",';
 	$output .= 'success:function(data){';
-	$output .= 'jQuery("#pesapal_checkout_'.$formid.'").parent().parent().html(data)';
+	if($options['full_frame'] === 'true'){
+		$output .= 'jQuery("body").html(data)';
+	}else{
+		$output .= 'jQuery("#pesapal_checkout_'.$formid.'").parent().parent().html(data)';
+	}
 	$output .= '}';
 	$output .= '})';
 	$output .= '});';
@@ -121,35 +129,38 @@ function pesapal_pay_donate($text){
 	$invoice = $pesapal_pay->generate_order_id();
 	$options = $pesapal_pay->get_options();
 	$content = '<form id="pesapal_donate_widget">';
-	$content .= '<table class="pesapal_pay_widget_table">';
+	
+	$content .= '<div class="pesapal_pay_widget_table">';
+	$content .= '<fieldset>';
 	if(!empty($text)){
-		$content .= '<tr>';
-		$content .= '<td>';
+		$content .= '<div class="control-group">';
 		$content .= $text;
-		$content .= '</td>';
-		$content .= '</tr>';
+		$content .= '</div>';
 	}
-	$content .= '<tr>';
-	$content .= '<td>';
+	$content .= '<div class="control-group">';
+	$content .= '<label>';
 	$content .= __("Email :");
-	$content .= '<br/>';
-	$content .= '<input type="text" name="pesapal_donate_email" id="pesapal_donate_email" value=""/>';
-	$content .= '</td>';
-	$content .= '</tr>';
-	$content .= '<tr>';
-	$content .= '<td>';
+	$content .= '</label><br/>';
+	$content .= '<div><input type="text" name="pesapal_donate_email" id="pesapal_donate_email" value=""/>';
+	$content .= '</div>';
+	$content .= '</div>';
+	
+	$content .= '<div class="control-group">';
+	$content .= '<label>';
 	$content .= __("Amount : ");
 	$content .= '('.$options['currency'].')';
-	$content .= '<br/>';
-	$content .= '<input type="text" name="pesapal_donate_amount" id="pesapal_donate_amount" value=""/>';
-	$content .= '</td>';
-	$content .= '</tr>';
-	$content .= '</table>';
+	$content .= '</label><br/>';
+	$content .= '<div><input type="text" name="pesapal_donate_amount" id="pesapal_donate_amount" value=""/>';
+	$content .= '</div>';
+	$content .= '</div>';
+	
+	$content .= '</fieldset>';
+	$content .= '</div>';
 	$content .= '<input type="hidden" name="pesapal_donate_invoice" id="pesapal_donate_invoice" value="'.$invoice.'"/>';
 	$content .= '<input type="hidden" name="ajax" value="true" />';
 	$content .= '<input type="hidden" name="action" value="pesapal_save_transaction"/>';
 	$content .= '</form>';
-	$content .= '<button name="pespal_pay_donate" id="pespal_pay_donate">'.__("Donate Using PesaPal").'</button>';
+	$content .= '<button name="pespal_pay_donate" class="pesapal_btn" id="pespal_pay_donate">'.__("Donate Using PesaPal").'</button>';
 	$content .= '<script type="text/javascript">';
 	$content .= 'jQuery(document).ready(function(){';
 	$content .= 'jQuery("#pespal_pay_donate").click(function(){';
@@ -159,7 +170,11 @@ function pesapal_pay_donate($text){
 	$content .= 'data: jQuery("#pesapal_donate_widget").serialize(),';
 	$content .= 'url: "'.admin_url('admin-ajax.php').'",';
 	$content .= 'success:function(data){';
-	$content .= 'jQuery("#pesapal_donate_widget").parent().html(data)';
+	if($options['full_frame'] === 'true'){
+		$content .= 'jQuery("body").html(data)';
+	}else{
+		$content .= 'jQuery("#pesapal_donate_widget").parent().html(data)';
+	}
 	$content .= '}';
 	$content .= '})';
 	$content .= '});';
