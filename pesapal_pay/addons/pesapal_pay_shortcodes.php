@@ -47,6 +47,7 @@ function pesapal_pay_payment_form($atts){
 	$output .= 'url: "'.admin_url('admin-ajax.php').'",';
 	$output .= 'success:function(data){';
 	if($options['full_frame'] === 'true'){
+		$output .= 'jQuery("body").css("height","100%");';
 		$output .= 'jQuery("body").html(data)';
 	}else{
 		$output .= 'jQuery("#pesapal_checkout").parent().html(data)';
@@ -103,6 +104,7 @@ function pesapal_pay_button($atts){
 	$output .= 'url: "'.admin_url('admin-ajax.php').'",';
 	$output .= 'success:function(data){';
 	if($options['full_frame'] === 'true'){
+		$output .= 'jQuery("body").css("height","100%");';
 		$output .= 'jQuery("body").html(data)';
 	}else{
 		$output .= 'jQuery("#pesapal_checkout_'.$formid.'").parent().parent().html(data)';
@@ -171,6 +173,7 @@ function pesapal_pay_donate($text){
 	$content .= 'url: "'.admin_url('admin-ajax.php').'",';
 	$content .= 'success:function(data){';
 	if($options['full_frame'] === 'true'){
+		$output .= 'jQuery("body").css("height","100%");';
 		$content .= 'jQuery("body").html(data)';
 	}else{
 		$content .= 'jQuery("#pesapal_donate_widget").parent().html(data)';
