@@ -6,7 +6,7 @@ add_action('widgets_init', create_function('', 'return register_widget("Pesapal_
 if(!class_exists('Pesapal_Pay_widget')) {
 	class Pesapal_Pay_widget extends WP_Widget {
 		
-		function Pesapal_Pay_widget(){
+		function __construct(){
 			$widget_ops = array( 'classname' => 'pesapal_pay_widget', 'description' => __('Pesapal Donate Widget') ); // Widget Settings
 			$control_ops = array( 'id_base' => 'pesapal_pay_widget' ); // Widget Control Settings
 			$this->WP_Widget( 'pesapal_pay_widget', __('Pesapal Donate'), $widget_ops, $control_ops ); //

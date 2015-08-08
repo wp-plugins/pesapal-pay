@@ -2,7 +2,7 @@
 /*
 Plugin Name: Pesapal Pay
 Description: A quick way to integrate pesapal to your website to handle the payment process. All you need to do is set up what parameters to capture from the form and the plugin will do the rest
-Version: 2.2.3
+Version: 2.2.4
 Author: rixeo
 Author URI: http://thebunch.co.ke/
 Plugin URI: http://thebunch.co.ke/
@@ -18,7 +18,7 @@ class PesaPal_Pay{
 	 *
 	 * @var string
 	 */
-	var $version = '2.23';
+	var $version = '2.24';
 	
 	/**
 	 * Plugin Directory
@@ -114,9 +114,6 @@ class PesaPal_Pay{
 		
 		add_action( 'wp_ajax_nopriv_pesapalpay_ipn_page_return', array(&$this,'ipn_page_return'));
 		add_action( 'wp_ajax_pesapalpay_ipn_page_return', array(&$this,'ipn_page_return'));
-		
-		$this->load_plugins(); //Load plugins
-		
 	}
 	
 	/**
@@ -164,6 +161,8 @@ class PesaPal_Pay{
 		
 		require_once($this->plugin_dir.'addons/pesapal_pay_shortcodes.php'); //Load shortcodes
 		require_once($this->plugin_dir.'addons/pesapal_pay_donate_widget.php'); //Load widget
+		
+		add_action( 'plugins_loaded', array( &$this, 'load_plugins' ) ); //Load plugins
 	}
 	
 	/**
