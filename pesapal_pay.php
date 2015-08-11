@@ -2,7 +2,7 @@
 /*
 Plugin Name: Pesapal Pay
 Description: A quick way to integrate pesapal to your website to handle the payment process. All you need to do is set up what parameters to capture from the form and the plugin will do the rest
-Version: 2.2.5
+Version: 2.2.6
 Author: rixeo
 Author URI: http://thebunch.co.ke/
 Plugin URI: http://thebunch.co.ke/
@@ -18,7 +18,7 @@ class PesaPal_Pay{
 	 *
 	 * @var string
 	 */
-	var $version = '2.24';
+	var $version = '2.26';
 	
 	/**
 	 * Plugin Directory
@@ -503,7 +503,7 @@ class PesaPal_Pay{
 		$order_id = intval($_POST['id']);
 		$order_status = 'Pending';
 		$new_status = '';
-		$post = get_post($order_id); 
+		$post = get_page_by_title( $order_id, OBJECT, 'pesapal_pay' ); 
 		if ($post) {
 			$current_status = $post->post_status;
 			if ($current_status === "order_pending") {
